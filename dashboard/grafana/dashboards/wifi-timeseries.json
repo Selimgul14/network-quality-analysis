@@ -1,0 +1,305 @@
+{
+  "uid": "wifi-timeseries",
+  "title": "WiFi Performance: time series",
+  "tags": [
+    "comp702"
+  ],
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Web page load",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'load_ms')::float AS value FROM measurement WHERE workload='web' AND ok AND metrics->>'load_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Video startup delay",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'startup_ms')::float AS value FROM measurement WHERE workload='video' AND ok AND metrics->>'startup_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Video rebuffer time",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'rebuffer_ms')::float AS value FROM measurement WHERE workload='video' AND ok AND metrics->>'rebuffer_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Email fetch",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'fetch_ms')::float AS value FROM measurement WHERE workload='email' AND ok AND metrics->>'fetch_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Download throughput",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Mbps",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'throughput_mbps')::float AS value FROM measurement WHERE workload='download' AND ok AND metrics->>'throughput_mbps' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Baseline RTT (anchors)",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", target AS metric, (metrics->>'rtt_ms')::float AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'rtt_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Baseline packet loss",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", target AS metric, (metrics->>'loss_pct')::float AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'loss_pct' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Path RTT to anchor",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "custom": {
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", target AS metric, (metrics->>'dest_rtt_ms')::float AS value FROM measurement WHERE workload='path' AND ok AND metrics->>'dest_rtt_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    }
+  ]
+}

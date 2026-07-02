@@ -6,8 +6,10 @@ endpoints feed both the Grafana board and the custom summary page.
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -17,8 +19,12 @@ from cloud.db.session import get_db
 
 from .config import settings
 from .schemas import Measurement
+from .summary import compute_summary
 
 app = FastAPI(title="Remote WiFi Performance Tool API")
+
+# dashboard/summary/index.html, copied into the image next to cloud/
+SUMMARY_PAGE = Path(__file__).resolve().parents[2] / "dashboard" / "summary" / "index.html"
 
 
 def require_token(authorization: str = Header(default="")) -> None:
@@ -58,6 +64,29 @@ def ingest(m: Measurement, db: Session = Depends(get_db)) -> dict[str, str]:
         db.rollback()
         return {"status": "duplicate", "run_id": m.run_id}
     return {"status": "accepted", "run_id": m.run_id}
+
+
+def _rows_since(db: Session, hours: int) -> list[models.Measurement]:
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    return list(db.scalars(select(models.Measurement).where(models.Measurement.ts >= since)))
+
+
+@app.get("/summary")
+def summary(
+    hours: int = Query(default=24, ge=1, le=336),
+    db: Session = Depends(get_db),
+) -> dict:
+    """End-user summary: per-workload status + where-is-the-slowness."""
+    rows = [
+        {"workload": r.workload, "endpoint": r.endpoint, "ok": r.ok, "metrics": r.metrics}
+        for r in _rows_since(db, hours)
+    ]
+    return compute_summary(rows, hours)
+
+
+@app.get("/")
+def summary_page() -> FileResponse:
+    return FileResponse(SUMMARY_PAGE, media_type="text/html")
 
 
 @app.get("/measurements")

@@ -1,0 +1,8 @@
+# Loads every dashboard JSON in this folder.
+apiVersion: 1
+providers:
+  - name: wifi-dashboards
+    type: file
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

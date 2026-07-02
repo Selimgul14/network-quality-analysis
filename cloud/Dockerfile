@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir fastapi "uvicorn[standard]" sqlalchemy alembic \
 
 COPY cloud/ ./cloud/
 COPY contracts/ ./contracts/
+COPY dashboard/summary/ ./dashboard/summary/
 COPY alembic.ini .
 
 EXPOSE 8000

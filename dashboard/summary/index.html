@@ -5,44 +5,126 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Remote WiFi Performance Tool</title>
   <style>
-    :root { --ink:#1b2733; --mute:#65788a; --line:#dde4ea; --green:#1f9d57; --amber:#d98a00; --red:#d23b3b; }
+    :root { --ink:#1b2733; --mute:#65788a; --line:#dde4ea; --green:#1f9d57; --amber:#d98a00; --red:#d23b3b;
+            --green-bg:#e3f4ea; --amber-bg:#fbeed3; --red-bg:#fadddd; }
     body { font-family: system-ui, sans-serif; margin:0; background:#eef2f6; color:var(--ink); }
-    header { background:#fff; border-bottom:1px solid var(--line); padding:1rem 2rem; font-weight:700; }
+    header { background:#fff; border-bottom:1px solid var(--line); padding:1rem 2rem; font-weight:700;
+             display:flex; justify-content:space-between; align-items:center; }
+    header .live { font-size:.85rem; color:var(--mute); font-weight:400; }
     main { max-width:1200px; margin:1.5rem auto; padding:0 1rem; }
-    .cards { display:grid; grid-template-columns:repeat(2,1fr); gap:1rem; margin-top:1rem; }
-    .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem 1.25rem; }
-    .pill { font-size:.8rem; font-weight:700; padding:.15rem .6rem; border-radius:999px; }
+    h1 { margin:.2rem 0 .6rem; }
+    .banner { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1.2rem 1.5rem; }
+    .pill { display:inline-block; font-size:.85rem; font-weight:700; padding:.25rem .8rem; border-radius:999px; }
+    .good  { color:var(--green); background:var(--green-bg); }
+    .slow, .degraded { color:var(--amber); background:var(--amber-bg); }
+    .poor  { color:var(--red); background:var(--red-bg); }
+    .no_data { color:var(--mute); background:#e8edf2; }
+    .layout { display:grid; grid-template-columns:1fr 2fr; gap:1rem; margin-top:1rem; }
+    .cards { display:grid; grid-template-columns:repeat(2,1fr); gap:1rem; }
+    .card, .side { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem 1.25rem; }
+    .card h3 { margin:0 0 .1rem; } .card .sub { color:var(--mute); font-size:.85rem; }
+    .card .big { font-size:2rem; font-weight:800; margin:.4rem 0 .1rem; }
+    .seg { border:1px solid var(--line); border-radius:10px; padding:.7rem .9rem; margin:.6rem 0;
+           display:flex; justify-content:space-between; align-items:center; }
+    .seg.cause { border-color:var(--amber); background:var(--amber-bg); }
+    .seg .name { font-weight:700; } .seg .desc { color:var(--mute); font-size:.8rem; }
+    svg.spark { width:100%; height:44px; margin-top:.4rem; }
+    footer { color:var(--mute); font-size:.85rem; display:flex; justify-content:space-between; margin:1.5rem 0; }
+    @media (max-width:900px){ .layout,.cards { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
-  <header>Remote WiFi Performance Tool</header>
+  <header><span>Remote WiFi Performance Tool</span><span class="live" id="live">loading…</span></header>
   <main>
-    <h1 id="headline">Is my WiFi supporting the things I do?</h1>
-    <p id="slowness" class="pill"></p>
-    <!-- Where-is-the-slowness logic: compare local vs cloud vs real per
-         workload to attribute a slow result to WiFi link / Internet path /
-         Third-party service. See proposal/figures for the target design. -->
-    <div id="cards" class="cards"></div>
+    <div class="banner">
+      <h1>Is my WiFi supporting the things I do?</h1>
+      <span id="headline" class="pill no_data">loading…</span>
+    </div>
+
+    <div class="layout">
+      <div class="side">
+        <h2 style="margin-top:0">Where is the slowness?</h2>
+        <p class="sub" style="color:var(--mute);font-size:.9rem">We test the same task three ways to find the cause.</p>
+        <div id="segments"></div>
+      </div>
+      <div class="cards" id="cards"></div>
+    </div>
+
+    <footer><span id="probe"></span><span id="updated"></span></footer>
   </main>
 
   <script>
-    // Minimal client. Fetches recent measurements from the backend and
-    // renders the four workload cards. Attribution logic is a TODO.
-    const API = window.API_BASE || "http://localhost:8000";
-    const WORKLOADS = ["web", "video", "email", "download"];
+    const API = window.API_BASE || "";   // same origin by default
+    const CARDS = {
+      web:      { title:"Web browsing",    sub:"Page load time",      fmt:v => v>=1000 ? (v/1000).toFixed(1)+" s" : Math.round(v)+" ms" },
+      video:    { title:"Video streaming", sub:"Startup delay",       fmt:v => (v/1000).toFixed(1)+" s" },
+      email:    { title:"Email",           sub:"IMAP fetch time",     fmt:v => Math.round(v)+" ms" },
+      download: { title:"File download",   sub:"Average throughput",  fmt:v => Math.round(v)+" Mbps" },
+    };
+    const SEGS = {
+      wifi_link:     { name:"WiFi link",           desc:"Router to this device" },
+      internet_path: { name:"Internet path",       desc:"Router out to the internet" },
+      third_party:   { name:"Third-party service", desc:"The app or website itself" },
+    };
+    const STATUS_WORD = { good:"Healthy", degraded:"Degraded", poor:"Poor", slow:"Slow", no_data:"No data" };
+
+    // Inline SVG sparkline, no chart library needed.
+    function spark(values, cls) {
+      if (values.length < 2) return "";
+      const min = Math.min(...values), max = Math.max(...values), span = (max-min) || 1;
+      const pts = values.map((v,i) =>
+        `${(i/(values.length-1)*100).toFixed(1)},${(40 - (v-min)/span*36).toFixed(1)}`).join(" ");
+      const color = cls === "good" ? "var(--green)" : cls === "no_data" ? "var(--mute)" : "var(--amber)";
+      return `<svg class="spark" viewBox="0 0 100 44" preserveAspectRatio="none">
+        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+    }
 
     async function load() {
-      const cards = document.getElementById("cards");
-      for (const w of WORKLOADS) {
-        const rows = await fetch(`${API}/measurements?workload=${w}&hours=24`)
-          .then(r => r.json()).catch(() => []);
-        const el = document.createElement("div");
-        el.className = "card";
-        el.innerHTML = `<strong>${w}</strong><br><span>${rows.length} points / 24h</span>`;
-        cards.appendChild(el);
+      const s = await fetch(`${API}/summary?hours=24`).then(r => r.json());
+      const headline = document.getElementById("headline");
+      headline.textContent = s.headline;
+      headline.className = "pill " + s.overall;
+
+      // Segment column
+      const segEl = document.getElementById("segments");
+      segEl.innerHTML = "";
+      for (const [key, meta] of Object.entries(SEGS)) {
+        const isCause = s.likely_cause === key;
+        segEl.insertAdjacentHTML("beforeend", `
+          <div class="seg ${isCause ? "cause" : ""}">
+            <div><div class="name">${meta.name}</div><div class="desc">${meta.desc}</div></div>
+            <span class="pill ${s.segments[key] === "ok" ? "good" : "slow"}">
+              ${isCause ? "LIKELY CAUSE" : s.segments[key] === "ok" ? "OK" : "SUSPECT"}</span>
+          </div>`);
       }
+
+      // Workload cards with sparklines from the raw series (real endpoint)
+      const cards = document.getElementById("cards");
+      cards.innerHTML = "";
+      for (const [w, meta] of Object.entries(CARDS)) {
+        const d = s.workloads[w];
+        const rows = await fetch(`${API}/measurements?workload=${w}&endpoint=real&hours=24`)
+          .then(r => r.json()).catch(() => []);
+        const series = rows.filter(r => r.ok && r.metrics[d.metric] != null)
+                           .map(r => r.metrics[d.metric]).reverse();
+        cards.insertAdjacentHTML("beforeend", `
+          <div class="card">
+            <div style="display:flex;justify-content:space-between">
+              <h3>${meta.title}</h3>
+              <span class="pill ${d.status}">${STATUS_WORD[d.status]}</span>
+            </div>
+            <div class="sub">${meta.sub}</div>
+            <div class="big">${d.value != null ? meta.fmt(d.value) : "–"}</div>
+            ${spark(series, d.status)}
+          </div>`);
+      }
+
+      document.getElementById("live").textContent = "Live";
+      document.getElementById("updated").textContent =
+        "Last updated: " + new Date().toLocaleString() + " (24 h window)";
     }
     load();
+    setInterval(load, 5 * 60 * 1000);  // refresh with the heavy cadence
   </script>
 </body>
 </html>
