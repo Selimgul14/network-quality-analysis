@@ -31,7 +31,10 @@ python -m probe.main
 
 ## Status
 
-Scaffold. The download workload and the baseline probe are implemented;
-web/video/email/path workloads and the
-summary-page attribution logic are stubs marked with `TODO` /
-`NotImplementedError`. Fill them in following the build order in CLAUDE.md.
+Done: data contract, reference content (video + 25 MiB file generated in
+the image build), backend persistence (Alembic hypertable migration, ingest,
+query endpoint, Blob upload), download + baseline workloads, API tests.
+
+Remaining stubs (`TODO` / `NotImplementedError`): web/video/email/path
+workloads, probe context capture, summary-page attribution logic. Fill them
+in following the build order in CLAUDE.md.
