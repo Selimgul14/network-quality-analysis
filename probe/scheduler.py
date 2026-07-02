@@ -54,6 +54,11 @@ def run_heavy(buffer: Buffer) -> None:
         for ep in targets_for(workload):
             if ep.label:
                 buffer.add(_record(workload, ep.name, ep.label, run_id))
-    # one path snapshot per heavy cycle
-    buffer.add(_record("path", "real", settings.dns_anchors[0], run_id))
+    # one path snapshot per heavy cycle; ship the full mtr JSON as a raw
+    # payload ("_raw" is stripped by the uploader, never hits the schema)
+    rec = _record("path", "real", settings.dns_anchors[0], run_id)
+    if rec["ok"] and path.last_raw:
+        rec["raw_ref"] = f"{settings.probe_id}/{run_id}-path.json"
+        rec["_raw"] = path.last_raw.decode()
+    buffer.add(rec)
     flush(buffer)

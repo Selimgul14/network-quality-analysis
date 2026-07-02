@@ -83,6 +83,15 @@ def test_duplicate_upload_is_idempotent(client):
     assert len(client.get("/measurements").json()) == 1
 
 
+def test_ingest_raw_without_blob_returns_null_key(client):
+    r = client.post(
+        "/ingest/raw", params={"key": "probe-01/run-1-path.json"},
+        content=b'{"report": {}}', headers=AUTH,
+    )
+    assert r.status_code == 201
+    assert r.json()["key"] is None  # Blob not configured in tests
+
+
 def test_ingest_rejects_bad_workload(client):
     rec = sample_record()
     rec["workload"] = "bittorrent"

@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +18,8 @@ from cloud.db import models
 from cloud.db.session import get_db
 
 from .config import settings
+from cloud.blob import upload_raw
+
 from .schemas import Measurement
 from .summary import compute_summary
 
@@ -64,6 +66,17 @@ def ingest(m: Measurement, db: Session = Depends(get_db)) -> dict[str, str]:
         db.rollback()
         return {"status": "duplicate", "run_id": m.run_id}
     return {"status": "accepted", "run_id": m.run_id}
+
+
+@app.post("/ingest/raw", status_code=201, dependencies=[Depends(require_token)])
+async def ingest_raw(key: str, request: Request) -> dict:
+    """Store a large raw payload (e.g. full mtr JSON) in Blob Storage.
+
+    Returns {"key": null} when Blob is not configured (local dev): the
+    probe then sends its record with raw_ref unset.
+    """
+    body = await request.body()
+    return {"key": upload_raw(key, body)}
 
 
 def _rows_since(db: Session, hours: int) -> list[models.Measurement]:
