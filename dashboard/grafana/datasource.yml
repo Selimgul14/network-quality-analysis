@@ -1,0 +1,15 @@
+# Grafana datasource provisioning. Points at the Timescale/Postgres DB.
+apiVersion: 1
+datasources:
+  - name: WiFi Timescale
+    type: postgres
+    access: proxy
+    url: ${DB_HOST}:5432
+    database: wifi
+    user: wifi
+    secureJsonData:
+      password: ${DB_PASSWORD}
+    jsonData:
+      sslmode: require
+      postgresVersion: 1600
+      timescaledb: true

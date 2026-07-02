@@ -1,0 +1,12 @@
+.env
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+# large reference assets (see reference/README.md)
+reference/content/media/
+reference/content/files/

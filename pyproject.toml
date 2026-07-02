@@ -1,0 +1,41 @@
+[project]
+name = "wifi-perf-tool"
+version = "0.1.0"
+description = "Remote WiFi Performance Tool (COMP702 MSc project)"
+requires-python = ">=3.11"
+dependencies = [
+    # probe
+    "httpx>=0.27",
+    "apscheduler>=3.10",
+    "playwright>=1.44",
+    "yt-dlp>=2024.5.27",
+    # backend
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.1",
+    "azure-storage-blob>=12.20",
+    # shared
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "jsonschema>=4.22",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.2", "ruff>=0.4", "pre-commit>=3.7"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["probe", "probe.workloads", "cloud", "cloud.app", "cloud.db"]

@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sam.csc.liv.ac.uk/COMP702/measurement.schema.json",
+  "title": "Measurement",
+  "description": "One measurement record produced by the probe. Shared contract for probe, backend and dashboard. One row per (workload, endpoint) run.",
+  "type": "object",
+  "required": ["ts", "probe_id", "run_id", "workload", "endpoint", "target", "ok", "metrics"],
+  "additionalProperties": false,
+  "properties": {
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp of the measurement, ISO 8601."
+    },
+    "probe_id": {
+      "type": "string",
+      "description": "Stable probe identifier, e.g. 'pi-maple-01'."
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Groups the three endpoint runs of one scheduled heavy workload."
+    },
+    "workload": {
+      "type": "string",
+      "enum": ["web", "video", "email", "download", "baseline", "path"]
+    },
+    "endpoint": {
+      "type": "string",
+      "enum": ["local", "cloud", "real"],
+      "description": "Which endpoint family this run hit."
+    },
+    "target": {
+      "type": "string",
+      "description": "Concrete host or label the run measured."
+    },
+    "ok": {
+      "type": "boolean",
+      "description": "True if the run completed and produced valid metrics."
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error detail when ok is false."
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Numeric results. Expected keys per workload (all optional so the schema stays stable): web -> dns_ms, connect_ms, ttfb_ms, load_ms; video -> startup_ms, rebuffer_count, rebuffer_ms; email -> fetch_ms; download -> throughput_mbps, bytes; baseline -> dns_ms, rtt_ms, jitter_ms, loss_pct; path -> hops.",
+      "additionalProperties": { "type": "number" }
+    },
+    "context": {
+      "type": "object",
+      "description": "Environment captured with every record so changes show up in the data.",
+      "additionalProperties": false,
+      "properties": {
+        "wifi_channel": { "type": ["integer", "null"] },
+        "rssi_dbm": { "type": ["number", "null"] },
+        "cpu_temp_c": { "type": ["number", "null"] }
+      }
+    },
+    "raw_ref": {
+      "type": ["string", "null"],
+      "description": "Blob Storage key for a large raw payload (e.g. full traceroute JSON). Null when there is none."
+    },
+    "net_hash": {
+      "type": ["string", "null"],
+      "description": "Truncated + hashed public IP (ethics: site is not identifiable from stored data)."
+    }
+  }
+}

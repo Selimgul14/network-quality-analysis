@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote WiFi Performance Tool</title>
+  <style>
+    :root { --ink:#1b2733; --mute:#65788a; --line:#dde4ea; --green:#1f9d57; --amber:#d98a00; --red:#d23b3b; }
+    body { font-family: system-ui, sans-serif; margin:0; background:#eef2f6; color:var(--ink); }
+    header { background:#fff; border-bottom:1px solid var(--line); padding:1rem 2rem; font-weight:700; }
+    main { max-width:1200px; margin:1.5rem auto; padding:0 1rem; }
+    .cards { display:grid; grid-template-columns:repeat(2,1fr); gap:1rem; margin-top:1rem; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem 1.25rem; }
+    .pill { font-size:.8rem; font-weight:700; padding:.15rem .6rem; border-radius:999px; }
+  </style>
+</head>
+<body>
+  <header>Remote WiFi Performance Tool</header>
+  <main>
+    <h1 id="headline">Is my WiFi supporting the things I do?</h1>
+    <p id="slowness" class="pill"></p>
+    <!-- Where-is-the-slowness logic: compare local vs cloud vs real per
+         workload to attribute a slow result to WiFi link / Internet path /
+         Third-party service. See proposal/figures for the target design. -->
+    <div id="cards" class="cards"></div>
+  </main>
+
+  <script>
+    // Minimal client. Fetches recent measurements from the backend and
+    // renders the four workload cards. Attribution logic is a TODO.
+    const API = window.API_BASE || "http://localhost:8000";
+    const WORKLOADS = ["web", "video", "email", "download"];
+
+    async function load() {
+      const cards = document.getElementById("cards");
+      for (const w of WORKLOADS) {
+        const rows = await fetch(`${API}/measurements?workload=${w}&hours=24`)
+          .then(r => r.json()).catch(() => []);
+        const el = document.createElement("div");
+        el.className = "card";
+        el.innerHTML = `<strong>${w}</strong><br><span>${rows.length} points / 24h</span>`;
+        cards.appendChild(el);
+      }
+    }
+    load();
+  </script>
+</body>
+</html>
