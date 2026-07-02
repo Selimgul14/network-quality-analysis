@@ -13,6 +13,11 @@ services:
       POSTGRES_DB: wifi
     ports: ["5432:5432"]
     volumes: ["dbdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wifi -d wifi"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
 
   api:
     build:
@@ -22,7 +27,10 @@ services:
       API_INGEST_TOKEN: dev-token-change-me
       API_DATABASE_URL: postgresql+psycopg://wifi:wifi@db:5432/wifi
     ports: ["8000:8000"]
-    depends_on: [db]
+    depends_on:
+      db:
+        condition: service_healthy   # don't run migrations before Postgres is up
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:latest
