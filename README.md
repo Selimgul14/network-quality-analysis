@@ -32,6 +32,6 @@ python -m probe.main
 ## Status
 
 Scaffold. The download workload and the baseline probe are implemented;
-web/video/email/path workloads, backend persistence, Blob upload and the
+web/video/email/path workloads and the
 summary-page attribution logic are stubs marked with `TODO` /
 `NotImplementedError`. Fill them in following the build order in CLAUDE.md.
