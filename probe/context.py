@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import subprocess
 
+WIFI_IFACE = "wlan0"
+
 
 def _cpu_temp_c() -> float | None:
     try:
@@ -16,14 +18,33 @@ def _cpu_temp_c() -> float | None:
         return None
 
 
-def _wifi() -> dict[str, object | None]:
-    # TODO: parse `iw dev wlan0 link` for channel + signal (RSSI).
+def _iw(*args: str) -> str:
     try:
-        out = subprocess.run(["iw", "dev", "wlan0", "link"], capture_output=True, text=True).stdout
-        rssi = next((float(l.split()[1]) for l in out.splitlines() if "signal" in l), None)
-    except (OSError, ValueError, IndexError):
-        rssi = None
-    return {"wifi_channel": None, "rssi_dbm": rssi}
+        return subprocess.run(
+            ["iw", "dev", WIFI_IFACE, *args],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except OSError:
+        return ""
+
+
+def _wifi() -> dict[str, object | None]:
+    rssi = channel = None
+    # `iw dev wlan0 link` -> "signal: -52 dBm"
+    for line in _iw("link").splitlines():
+        if "signal:" in line:
+            try:
+                rssi = float(line.split()[1])
+            except (ValueError, IndexError):
+                pass
+    # `iw dev wlan0 info` -> "channel 36 (5180 MHz), width: 80 MHz, ..."
+    for line in _iw("info").splitlines():
+        if line.strip().startswith("channel"):
+            try:
+                channel = int(line.split()[1])
+            except (ValueError, IndexError):
+                pass
+    return {"wifi_channel": channel, "rssi_dbm": rssi}
 
 
 def snapshot() -> dict[str, object | None]:

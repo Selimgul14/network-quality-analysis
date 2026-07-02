@@ -6,7 +6,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ProbeSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PROBE_", env_file=".env")
+    # extra="ignore": .env also holds API_* keys for the backend
+    model_config = SettingsConfigDict(env_prefix="PROBE_", env_file=".env", extra="ignore")
 
     probe_id: str = "pi-dev-01"
 
@@ -20,6 +21,8 @@ class ProbeSettings(BaseSettings):
     real_web: str = "https://www.bbc.co.uk/news"
     real_video: str = ""  # public video URL for yt-dlp
     real_imap_host: str = ""
+    real_imap_user: str = ""
+    real_imap_pass: str = ""
 
     # Cadences (seconds)
     baseline_interval_s: int = 10
