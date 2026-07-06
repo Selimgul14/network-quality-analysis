@@ -5,6 +5,7 @@ Usage: python -m probe.main
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.blocking import BlockingScheduler
 
@@ -19,10 +20,13 @@ log = logging.getLogger("probe")
 def main() -> None:
     buffer = Buffer(settings.buffer_path)
     sched = BlockingScheduler(timezone="UTC")
+    # next_run_time=now: fire both jobs at startup instead of waiting one
+    # full interval, so a fresh probe produces data immediately.
+    now = datetime.now(timezone.utc)
     sched.add_job(run_baseline, "interval", seconds=settings.baseline_interval_s,
-                  args=[buffer], id="baseline", max_instances=1)
+                  args=[buffer], id="baseline", max_instances=1, next_run_time=now)
     sched.add_job(run_heavy, "interval", seconds=settings.heavy_interval_s,
-                  args=[buffer], id="heavy", max_instances=1)
+                  args=[buffer], id="heavy", max_instances=1, next_run_time=now)
     log.info("probe %s starting: baseline %ss, heavy %ss",
              settings.probe_id, settings.baseline_interval_s, settings.heavy_interval_s)
     sched.start()
