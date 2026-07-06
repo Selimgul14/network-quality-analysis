@@ -24,7 +24,7 @@ docker push <user>/wifi-api:latest
 ```
 az group create -n comp702-rg -l uksouth
 az deployment group create -g comp702-rg -f infra/main.bicep \
-  -p adminPassword=<strong-pw> ingestToken=<random-token> \
+  -p adminPassword=<strong-pw> ingestToken=<random-token> dashPassword=<dash-pw> \
      registry=docker.io/<user> clientIp=<your-home-ip>
 ```
 

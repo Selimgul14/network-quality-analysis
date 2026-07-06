@@ -8,8 +8,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import secrets
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -32,6 +35,28 @@ SUMMARY_PAGE = Path(__file__).resolve().parents[2] / "dashboard" / "summary" / "
 def require_token(authorization: str = Header(default="")) -> None:
     if authorization != f"Bearer {settings.ingest_token}":
         raise HTTPException(status_code=401, detail="bad token")
+
+
+_basic = HTTPBasic(auto_error=False)
+
+
+def require_dash_auth(
+    credentials: HTTPBasicCredentials | None = Depends(_basic),
+) -> None:
+    """HTTP Basic on the dashboard endpoints. Disabled while API_DASH_PASS
+    is unset (local dev); the browser prompts for credentials otherwise."""
+    if not settings.dash_pass:
+        return
+    ok = credentials is not None and (
+        secrets.compare_digest(credentials.username, settings.dash_user)
+        and secrets.compare_digest(credentials.password, settings.dash_pass)
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=401,
+            detail="authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
 
 @app.get("/health")
@@ -84,7 +109,7 @@ def _rows_since(db: Session, hours: int) -> list[models.Measurement]:
     return list(db.scalars(select(models.Measurement).where(models.Measurement.ts >= since)))
 
 
-@app.get("/summary")
+@app.get("/summary", dependencies=[Depends(require_dash_auth)])
 def summary(
     hours: int = Query(default=24, ge=1, le=336),
     db: Session = Depends(get_db),
@@ -97,12 +122,12 @@ def summary(
     return compute_summary(rows, hours)
 
 
-@app.get("/")
+@app.get("/", dependencies=[Depends(require_dash_auth)])
 def summary_page() -> FileResponse:
     return FileResponse(SUMMARY_PAGE, media_type="text/html")
 
 
-@app.get("/measurements")
+@app.get("/measurements", dependencies=[Depends(require_dash_auth)])
 def measurements(
     workload: str | None = None,
     endpoint: str | None = None,

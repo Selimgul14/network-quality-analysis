@@ -12,5 +12,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://wifi:wifi@localhost:5432/wifi"
     blob_conn_str: str = ""  # Azure Blob connection string; empty disables raw upload
 
+    # HTTP Basic auth for the dashboard-facing endpoints (/, /summary,
+    # /measurements). Empty password disables auth (local dev only;
+    # always set both in the cloud).
+    dash_user: str = "wifi"
+    dash_pass: str = ""
+
 
 settings = Settings()

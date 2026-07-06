@@ -17,6 +17,10 @@ param adminPassword string
 @secure()
 param ingestToken string
 
+@description('HTTP Basic password for the dashboard endpoints.')
+@secure()
+param dashPassword string
+
 @description('Container registry namespace holding wifi-api and wifi-ref images, e.g. docker.io/<user>.')
 param registry string
 
@@ -101,6 +105,8 @@ resource api 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'API_INGEST_TOKEN', value: ingestToken }
         { name: 'API_DATABASE_URL', value: 'postgresql+psycopg://wifi:${adminPassword}@${pg.properties.fullyQualifiedDomainName}:5432/wifi?sslmode=require' }
         { name: 'API_BLOB_CONN_STR', value: storageConnStr }
+        { name: 'API_DASH_USER', value: 'wifi' }
+        { name: 'API_DASH_PASS', value: dashPassword }
         { name: 'WEBSITES_PORT', value: '8000' }
       ]
     }

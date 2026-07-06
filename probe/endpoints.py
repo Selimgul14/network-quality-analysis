@@ -26,13 +26,19 @@ class Endpoint:
 
 def targets_for(workload: str) -> list[Endpoint]:
     """Return the local, cloud and real targets for a given workload."""
-    path = REF_PATHS.get(workload, "/")
     real = {
         "web": settings.real_web,
         "video": settings.real_video,
         "email": settings.real_imap_host,
-        "download": settings.cloud_base + path,  # no free real download target; reuse cloud
+        "download": settings.cloud_base + REF_PATHS.get("download", "/"),  # no free real download target; reuse cloud
     }.get(workload, "")
+
+    # email is IMAP: the nginx reference (local/cloud) can't serve it, so
+    # only the real mailbox is a valid target.
+    if workload == "email":
+        return [Endpoint("real", real)]
+
+    path = REF_PATHS.get(workload, "/")
     return [
         Endpoint("local", settings.local_base + path),
         Endpoint("cloud", settings.cloud_base + path),

@@ -96,3 +96,11 @@ def test_ingest_rejects_bad_workload(client):
     rec = sample_record()
     rec["workload"] = "bittorrent"
     assert client.post("/ingest", json=rec, headers=AUTH).status_code == 422
+
+
+def test_dash_auth_when_password_set(client, monkeypatch):
+    monkeypatch.setattr(settings, "dash_pass", "s3cret")
+    assert client.get("/measurements").status_code == 401
+    assert client.get("/summary", auth=("wifi", "wrong")).status_code == 401
+    assert client.get("/summary", auth=("wifi", "s3cret")).status_code == 200
+    assert client.get("/measurements", auth=("wifi", "s3cret")).status_code == 200
