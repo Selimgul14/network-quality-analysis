@@ -6,11 +6,12 @@ datasources:
     type: postgres
     access: proxy
     url: ${DB_HOST}:5432
-    database: wifi
     user: wifi
     secureJsonData:
       password: ${DB_PASSWORD}
     jsonData:
+      # `database` lives in jsonData on current Grafana (top-level is removed)
+      database: wifi
       # local compose Postgres has no TLS; set to `require` on Azure
       sslmode: ${DB_SSLMODE}
       postgresVersion: 1600
