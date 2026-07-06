@@ -27,6 +27,12 @@ param registry string
 @description('Client IP allowed to reach Postgres directly (for local Grafana). Empty disables the rule.')
 param clientIp string = ''
 
+@description('App Service plan SKU. Bump to B2/S1 if the region has no B1 capacity.')
+param planSku string = 'B1'
+
+@description('App Service plan tier matching planSku.')
+param planTier string = 'Basic'
+
 // --- Storage (Blob) for raw payloads ---
 resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   name: '${prefix}stg${uniqueString(resourceGroup().id)}'
@@ -88,7 +94,7 @@ resource pgFwClient 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${prefix}-plan'
   location: location
-  sku: { name: 'B1', tier: 'Basic' }
+  sku: { name: planSku, tier: planTier }
   kind: 'linux'
   properties: { reserved: true }
 }
