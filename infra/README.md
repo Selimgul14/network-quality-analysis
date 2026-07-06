@@ -56,3 +56,13 @@ az group delete -n comp702-rg
   Grafana against the cloud DB (`DB_SSLMODE=require`).
 - Dual-region reference (stretch goal): redeploy `wifi-ref` in a second
   resource group in another region; nothing else changes.
+
+## Deployed state (6 July 2026)
+
+Live in `comp702-rg`, all resources in `norwayeast`: the student
+subscription's region policy only allows norwayeast, francecentral,
+germanywestcentral, switzerlandnorth and italynorth, and App Service
+capacity (France) / Postgres offer restrictions (Germany) ruled others
+out. Hostnames: `comp702-api.azurewebsites.net`,
+`comp702-ref.azurewebsites.net`, `comp702-pg.postgres.database.azure.com`.
+Note for the dissertation: the "cloud" endpoint is Oslo, not the UK.
