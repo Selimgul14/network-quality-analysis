@@ -27,6 +27,9 @@ param registry string
 @description('Client IP allowed to reach Postgres directly (for local Grafana). Empty disables the rule.')
 param clientIp string = ''
 
+@description('Region for Postgres, when the subscription restricts it in the main location.')
+param pgLocation string = location
+
 @description('App Service plan SKU. Bump to B2/S1 if the region has no B1 capacity.')
 param planSku string = 'B1'
 
@@ -46,7 +49,7 @@ var storageConnStr = 'DefaultEndpointsProtocol=https;AccountName=${storage.name}
 // --- PostgreSQL Flexible Server with TimescaleDB ---
 resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = {
   name: '${prefix}-pg'
-  location: location
+  location: pgLocation
   sku: { name: 'Standard_B1ms', tier: 'Burstable' }
   properties: {
     version: '16'
