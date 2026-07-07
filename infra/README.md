@@ -13,8 +13,10 @@ App Service pulls from a registry. Docker Hub free tier is enough:
 docker login
 docker build -t <user>/wifi-ref:latest reference/
 docker build -t <user>/wifi-api:latest -f cloud/Dockerfile .
+docker build -t <user>/wifi-grafana:latest dashboard/grafana/
 docker push <user>/wifi-ref:latest
 docker push <user>/wifi-api:latest
+docker push <user>/wifi-grafana:latest
 ```
 
 (Images must be linux/amd64: on Apple Silicon add `--platform linux/amd64`.)

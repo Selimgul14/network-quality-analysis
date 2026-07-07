@@ -138,6 +138,27 @@ resource ref 'Microsoft.Web/sites@2023-12-01' = {
   }
 }
 
+// --- Grafana (engineering board) ---
+resource grafana 'Microsoft.Web/sites@2023-12-01' = {
+  name: '${prefix}-grafana'
+  location: location
+  properties: {
+    serverFarmId: plan.id
+    siteConfig: {
+      linuxFxVersion: 'DOCKER|${registry}/wifi-grafana:latest'
+      appSettings: [
+        { name: 'WEBSITES_PORT', value: '3000' }
+        { name: 'DB_HOST', value: pg.properties.fullyQualifiedDomainName }
+        { name: 'DB_PASSWORD', value: adminPassword }
+        { name: 'DB_SSLMODE', value: 'require' }
+        { name: 'GF_SECURITY_ADMIN_USER', value: 'wifi' }
+        { name: 'GF_SECURITY_ADMIN_PASSWORD', value: dashPassword }
+      ]
+    }
+  }
+}
+
 output apiHostname string = api.properties.defaultHostName
+output grafanaHostname string = grafana.properties.defaultHostName
 output refHostname string = ref.properties.defaultHostName
 output pgHostname string = pg.properties.fullyQualifiedDomainName
