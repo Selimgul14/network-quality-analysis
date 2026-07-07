@@ -36,9 +36,11 @@ services:
     image: grafana/grafana:latest
     ports: ["3000:3000"]
     environment:
-      DB_HOST: db
-      DB_PASSWORD: wifi
-      DB_SSLMODE: disable   # local Postgres has no TLS; `require` on Azure
+      # defaults target the local compose DB; override in .env to point
+      # Grafana at the Azure DB instead (see infra/README.md)
+      DB_HOST: ${GRAFANA_DB_HOST:-db}
+      DB_PASSWORD: ${GRAFANA_DB_PASSWORD:-wifi}
+      DB_SSLMODE: ${GRAFANA_DB_SSLMODE:-disable}
     volumes: ["./dashboard/grafana:/etc/grafana/provisioning"]
     depends_on:
       db:
