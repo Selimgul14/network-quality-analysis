@@ -31,11 +31,13 @@ python -m probe.main
 
 ## Status
 
-Done: data contract, reference content (video + 25 MiB file generated in
-the image build), backend persistence (Alembic hypertable migration, ingest,
-query endpoint, Blob upload), all six workloads (web, video, email,
-download, baseline, path), WiFi/thermal context capture, tests.
+Build steps 1-6 complete and deployed (7 July 2026). The full pipeline is
+live: probe (dev Mac, Pi pending) -> Azure API -> Timescale -> summary
+page with three-way attribution + Grafana, all cloud-hosted (see
+infra/README.md for hostnames). Dashboard endpoints sit behind HTTP Basic
+auth; raw mtr JSON ships to Blob via /ingest/raw.
 
-Remaining: Grafana dashboard JSON + summary-page attribution logic (build
-step 6), Azure provisioning (step 3), raw-payload upload wiring in the
-scheduler, then integration/fault injection (step 7).
+Remaining: Pi bring-up (hardware/pi-setup.md), threshold tuning in
+cloud/app/summary.py after a 24 h soak, email mailbox + real video URL
+config, credential rotation, fault injection (step 7), then the pilot and
+site deployment (step 8).

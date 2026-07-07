@@ -59,12 +59,22 @@ az group delete -n comp702-rg
 - Dual-region reference (stretch goal): redeploy `wifi-ref` in a second
   resource group in another region; nothing else changes.
 
-## Deployed state (6 July 2026)
+## Deployed state (7 July 2026)
 
 Live in `comp702-rg`, all resources in `norwayeast`: the student
 subscription's region policy only allows norwayeast, francecentral,
 germanywestcentral, switzerlandnorth and italynorth, and App Service
 capacity (France) / Postgres offer restrictions (Germany) ruled others
-out. Hostnames: `comp702-api.azurewebsites.net`,
-`comp702-ref.azurewebsites.net`, `comp702-pg.postgres.database.azure.com`.
-Note for the dissertation: the "cloud" endpoint is Oslo, not the UK.
+out. Hostnames: `comp702-api.azurewebsites.net` (summary page at `/`,
+HTTP Basic, user `wifi`), `comp702-ref.azurewebsites.net`,
+`comp702-grafana.azurewebsites.net` (Grafana login, user `wifi`),
+`comp702-pg.postgres.database.azure.com`.
+
+Notes: the "cloud" endpoint is Oslo, not the UK (dissertation method
+detail). `shared_preload_libraries` needed a manual Postgres restart
+before the Timescale migration could run: if the api container loops on
+startup after a fresh deploy, restart pg then the api webapp. Azure
+Grafana is stateless (panels live in git; export JSON back into
+dashboard/grafana/dashboards/ after UI edits). The `allow-client`
+firewall rule (home IP) is only for direct psql/local Grafana; the
+hosted dashboards work from anywhere.
