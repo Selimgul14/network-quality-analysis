@@ -19,7 +19,8 @@ class ProbeSettings(BaseSettings):
     local_base: str = "http://reference.local"
     cloud_base: str = "https://comp702-ref.azurewebsites.net"
     real_web: str = "https://www.bbc.co.uk/news"
-    real_video: str = ""  # public video URL for yt-dlp
+    real_video: str = ""  # public video URL (direct media or yt-dlp page)
+    real_download: str = ""  # public test file; empty reuses the cloud endpoint
     real_imap_host: str = ""
     real_imap_user: str = ""
     real_imap_pass: str = ""

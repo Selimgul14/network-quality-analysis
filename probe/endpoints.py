@@ -30,7 +30,8 @@ def targets_for(workload: str) -> list[Endpoint]:
         "web": settings.real_web,
         "video": settings.real_video,
         "email": settings.real_imap_host,
-        "download": settings.cloud_base + REF_PATHS.get("download", "/"),  # no free real download target; reuse cloud
+        # real download: a genuine public test file if set, else reuse cloud
+        "download": settings.real_download or settings.cloud_base + REF_PATHS["download"],
     }.get(workload, "")
 
     # email is IMAP: the nginx reference (local/cloud) can't serve it, so

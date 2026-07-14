@@ -30,6 +30,9 @@ SEGMENT_LABELS = {
     "third_party": "Third-party service",
 }
 
+# Which endpoint's data tells us about each segment.
+SEGMENT_ENDPOINT = {"wifi_link": "local", "internet_path": "cloud", "third_party": "real"}
+
 
 def _median_metric(rows: list[dict], workload: str, endpoint: str) -> float | None:
     metric = WORKLOAD_METRIC[workload][0]
@@ -67,10 +70,14 @@ def _attribute(per_endpoint: dict[str, str]) -> str | None:
 def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     workloads: dict[str, Any] = {}
     suspects: list[str] = []
+    endpoint_has_data = {"local": False, "cloud": False, "real": False}
 
     for w in WORKLOAD_METRIC:
         metric, _, _, unit = WORKLOAD_METRIC[w]
         values = {ep: _median_metric(rows, w, ep) for ep in ("local", "cloud", "real")}
+        for ep, v in values.items():
+            if v is not None:
+                endpoint_has_data[ep] = True
         statuses = {ep: _status(w, v) for ep, v in values.items()}
         cause = _attribute(statuses)
         if cause:
@@ -88,8 +95,17 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
             "likely_cause": cause,
         }
 
-    # Segment view: a segment is suspect if any workload points at it.
-    segments = {s: ("suspect" if s in suspects else "ok") for s in SEGMENT_LABELS}
+    # Segment view: no_data if its endpoint reported nothing, else suspect
+    # if any workload points at it, else ok. Avoids a false "OK" for a
+    # segment (e.g. WiFi link) that was never actually measured.
+    segments = {
+        s: (
+            "no_data" if not endpoint_has_data[SEGMENT_ENDPOINT[s]]
+            else "suspect" if s in suspects
+            else "ok"
+        )
+        for s in SEGMENT_LABELS
+    }
     likely = max(set(suspects), key=suspects.count) if suspects else None
 
     statuses = [w["status"] for w in workloads.values() if w["status"] != "no_data"]

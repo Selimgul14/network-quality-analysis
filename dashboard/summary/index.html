@@ -90,11 +90,14 @@
       segEl.innerHTML = "";
       for (const [key, meta] of Object.entries(SEGS)) {
         const isCause = s.likely_cause === key;
+        const seg = s.segments[key];  // "ok" | "suspect" | "no_data"
+        const cls = seg === "ok" ? "good" : seg === "no_data" ? "no_data" : "slow";
+        const label = isCause ? "LIKELY CAUSE"
+          : seg === "ok" ? "OK" : seg === "no_data" ? "NOT MEASURED" : "SUSPECT";
         segEl.insertAdjacentHTML("beforeend", `
           <div class="seg ${isCause ? "cause" : ""}">
             <div><div class="name">${meta.name}</div><div class="desc">${meta.desc}</div></div>
-            <span class="pill ${s.segments[key] === "ok" ? "good" : "slow"}">
-              ${isCause ? "LIKELY CAUSE" : s.segments[key] === "ok" ? "OK" : "SUSPECT"}</span>
+            <span class="pill ${cls}">${label}</span>
           </div>`);
       }
 
