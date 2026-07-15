@@ -6,14 +6,21 @@
   <title>Remote WiFi Performance Tool</title>
   <style>
     :root { --ink:#1b2733; --mute:#65788a; --line:#dde4ea; --green:#1f9d57; --amber:#d98a00; --red:#d23b3b;
-            --green-bg:#e3f4ea; --amber-bg:#fbeed3; --red-bg:#fadddd; }
+            --green-bg:#e3f4ea; --amber-bg:#fbeed3; --red-bg:#fadddd;
+            --c-local:#377dd8; --c-cloud:#7a5cc0; --c-real:#d98a00; }
     body { font-family: system-ui, sans-serif; margin:0; background:#eef2f6; color:var(--ink); }
     header { background:#fff; border-bottom:1px solid var(--line); padding:1rem 2rem; font-weight:700;
              display:flex; justify-content:space-between; align-items:center; }
     header .live { font-size:.85rem; color:var(--mute); font-weight:400; }
+    header .live.stale { color:var(--red); font-weight:700; }
     main { max-width:1200px; margin:1.5rem auto; padding:0 1rem; }
     h1 { margin:.2rem 0 .6rem; }
     .banner { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1.2rem 1.5rem; }
+    .banner-top { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; }
+    .windows { display:flex; gap:.3rem; }
+    .windows button { font:inherit; font-size:.8rem; padding:.2rem .7rem; border:1px solid var(--line);
+                      background:#fff; border-radius:999px; cursor:pointer; color:var(--mute); }
+    .windows button.active { background:var(--ink); color:#fff; border-color:var(--ink); }
     .pill { display:inline-block; font-size:.85rem; font-weight:700; padding:.25rem .8rem; border-radius:999px; }
     .good  { color:var(--green); background:var(--green-bg); }
     .slow, .degraded { color:var(--amber); background:var(--amber-bg); }
@@ -22,14 +29,39 @@
     .layout { display:grid; grid-template-columns:1fr 2fr; gap:1rem; margin-top:1rem; }
     .cards { display:grid; grid-template-columns:repeat(2,1fr); gap:1rem; }
     .card, .side { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem 1.25rem; }
+    .card { cursor:pointer; } .card:hover, .seg:hover { border-color:#b4c2ce; }
     .card h3 { margin:0 0 .1rem; } .card .sub { color:var(--mute); font-size:.85rem; }
     .card .big { font-size:2rem; font-weight:800; margin:.4rem 0 .1rem; }
-    .seg { border:1px solid var(--line); border-radius:10px; padding:.7rem .9rem; margin:.6rem 0;
-           display:flex; justify-content:space-between; align-items:center; }
+    .card .thr { color:var(--mute); font-size:.78rem; margin:.05rem 0 .2rem; }
+    .card .head { display:flex; justify-content:space-between; align-items:flex-start; }
+    .caret { color:#9fb0bf; font-size:.9rem; transition:transform .15s; margin-left:.4rem; }
+    .open > .head .caret, .seg.open .caret { transform:rotate(90deg); }
+    .seg { border:1px solid var(--line); border-radius:10px; padding:.7rem .9rem; margin:.6rem 0 0;
+           display:flex; justify-content:space-between; align-items:center; cursor:pointer; }
     .seg.cause { border-color:var(--amber); background:var(--amber-bg); }
     .seg .name { font-weight:700; } .seg .desc { color:var(--mute); font-size:.8rem; }
     svg.spark { width:100%; height:44px; margin-top:.4rem; }
-    footer { color:var(--mute); font-size:.85rem; display:flex; justify-content:space-between; margin:1.5rem 0; }
+    svg.chart { width:100%; height:120px; }
+    .triple { display:flex; gap:.4rem; margin-top:.55rem; }
+    .triple .t { flex:1; background:#f5f8fa; border:1px solid var(--line); border-radius:8px; padding:.35rem .3rem; text-align:center; }
+    .triple .tl { display:block; color:var(--mute); font-size:.68rem; margin-bottom:.1rem; }
+    .triple .tv { font-weight:700; font-size:.85rem; }
+    .tv.good{ color:var(--green); } .tv.slow,.tv.degraded{ color:var(--amber); }
+    .tv.poor{ color:var(--red); } .tv.no_data{ color:var(--mute); font-weight:400; }
+    .detail { display:none; margin:.55rem 0 .1rem; padding:.65rem .8rem; background:#f8fafc;
+              border:1px solid #e3e9ef; border-radius:8px; font-size:.85rem; color:#42525f; }
+    .detail.open { display:block; }
+    .seg + .detail { margin:.35rem 0 .2rem; }
+    .legend { display:flex; align-items:center; gap:.9rem; font-size:.72rem; margin:.1rem 0 .3rem; color:var(--mute); }
+    .legend .dot { width:12px; height:3px; border-radius:2px; display:inline-block; margin-right:.25rem; vertical-align:middle; }
+    .axis { display:flex; justify-content:space-between; font-size:.68rem; color:#9fb0bf; }
+    .errs { margin-top:.5rem; }
+    .errs .e { font-size:.75rem; color:#b23b3b; margin:.12rem 0; }
+    .evrow { display:flex; justify-content:space-between; padding:.2rem 0; border-bottom:1px solid #eef2f6; }
+    .ctxcharts { display:flex; gap:1rem; } .ctxcharts > div { flex:1; }
+    .probe-link { cursor:pointer; text-decoration:underline dotted; }
+    .temp.warn { color:var(--amber); font-weight:700; } .temp.hot { color:var(--red); font-weight:700; }
+    footer { color:var(--mute); font-size:.85rem; display:flex; justify-content:space-between; margin:1.5rem 0 .3rem; }
     @media (max-width:900px){ .layout,.cards { grid-template-columns:1fr; } }
   </style>
 </head>
@@ -37,24 +69,35 @@
   <header><span>Remote WiFi Performance Tool</span><span class="live" id="live">loading…</span></header>
   <main>
     <div class="banner">
-      <h1>Is my WiFi supporting the things I do?</h1>
+      <div class="banner-top">
+        <h1>Is my WiFi supporting the things I do?</h1>
+        <div class="windows" id="windows">
+          <button data-h="1">1h</button>
+          <button data-h="24" class="active">24h</button>
+          <button data-h="168">7d</button>
+        </div>
+      </div>
       <span id="headline" class="pill no_data">loading…</span>
     </div>
 
     <div class="layout">
       <div class="side">
         <h2 style="margin-top:0">Where is the slowness?</h2>
-        <p class="sub" style="color:var(--mute);font-size:.9rem">We test the same task three ways to find the cause.</p>
+        <p class="sub" style="color:var(--mute);font-size:.9rem">We test the same task three ways to find the cause. Tap a segment to see why.</p>
         <div id="segments"></div>
       </div>
       <div class="cards" id="cards"></div>
     </div>
 
     <footer><span id="probe"></span><span id="updated"></span></footer>
+    <div id="ctxdetail" class="detail"></div>
   </main>
 
   <script>
-    const API = window.API_BASE || "";   // same origin by default
+    const API = window.API_BASE || "";      // same origin by default
+    let WINDOW = 24;                          // active time window (hours)
+    const fetchJSON = (p) => fetch(`${API}${p}`).then(r => r.json()).catch(() => null);
+
     const CARDS = {
       web:      { title:"Web browsing",    sub:"Page load time",      fmt:v => v>=1000 ? (v/1000).toFixed(1)+" s" : Math.round(v)+" ms" },
       video:    { title:"Video streaming", sub:"Startup delay",       fmt:v => (v/1000).toFixed(1)+" s" },
@@ -66,9 +109,17 @@
       internet_path: { name:"Internet path",       desc:"Router out to the internet" },
       third_party:   { name:"Third-party service", desc:"The app or website itself" },
     };
+    const SEG_ENDPOINT = { wifi_link:"local", internet_path:"cloud", third_party:"real" };
+    const SEG_EXPLAIN = {
+      wifi_link: "We run each task against a reference server on your own network. If even that is slow, the problem is the WiFi link between your router and this device, not the wider internet.",
+      internet_path: "The task to your local server is fine, but our controlled test server out on the internet is slow. That points to the path from your router out to the internet, not your WiFi.",
+      third_party: "Both your local server and our test server are fine, only the real website or app is slow. The bottleneck is that third-party service itself.",
+    };
     const STATUS_WORD = { good:"Healthy", degraded:"Degraded", poor:"Poor", slow:"Slow", no_data:"No data" };
+    const EP = { local:"Your link", cloud:"Test server", real:"Real site" };
+    const EP_COLOR = { local:"var(--c-local)", cloud:"var(--c-cloud)", real:"var(--c-real)" };
 
-    // Inline SVG sparkline, no chart library needed.
+    // Single-series sparkline for the card summary.
     function spark(values, cls) {
       if (values.length < 2) return "";
       const min = Math.min(...values), max = Math.max(...values), span = (max-min) || 1;
@@ -79,53 +130,199 @@
         <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
     }
 
+    // Multi-line chart: {label:[{t,v}]} scaled to a shared domain.
+    function lineChart(seriesMap) {
+      const all = Object.values(seriesMap).flat();
+      if (all.length < 2) return `<div class="axis"><span>not enough data yet</span></div>`;
+      const ts = all.map(p=>p.t), vs = all.map(p=>p.v);
+      const tmin = Math.min(...ts), tspan = (Math.max(...ts)-tmin) || 1;
+      const vmin = Math.min(...vs), vspan = (Math.max(...vs)-vmin) || 1;
+      let polys = "";
+      for (const [ep, pts] of Object.entries(seriesMap)) {
+        if (pts.length < 2) continue;
+        const d = [...pts].sort((a,b)=>a.t-b.t)
+          .map(p => `${((p.t-tmin)/tspan*100).toFixed(1)},${(58 - (p.v-vmin)/vspan*54).toFixed(1)}`).join(" ");
+        polys += `<polyline points="${d}" fill="none" stroke="${EP_COLOR[ep] || 'var(--mute)'}" stroke-width="1.5"/>`;
+      }
+      return `<svg class="chart" viewBox="0 0 100 60" preserveAspectRatio="none">${polys}</svg>`;
+    }
+
+    function sigQuality(dbm) {
+      return dbm>=-50 ? "Excellent" : dbm>=-60 ? "Strong" : dbm>=-67 ? "Good" : dbm>=-75 ? "Fair" : "Weak";
+    }
+    function tempClass(t) { return t>=80 ? "hot" : t>=72 ? "warn" : ""; }
+
+    // Plain-English explanation + per-workload evidence for a segment.
+    function segDetail(key, s) {
+      const ep = SEG_ENDPOINT[key];
+      const rows = Object.entries(CARDS).map(([w, meta]) => {
+        const d = s.workloads[w], v = d.per_endpoint[ep], st = d.endpoint_status[ep];
+        return `<div class="evrow"><span>${meta.title}</span>
+          <span class="tv ${st}">${v != null ? meta.fmt(v) : "not measured"}</span></div>`;
+      }).join("");
+      return `<p style="margin:.1rem 0 .5rem">${SEG_EXPLAIN[key]}</p>
+        <div style="font-size:.72rem;color:var(--mute);margin-bottom:.2rem">Evidence, measured at: ${EP[ep]}</div>${rows}`;
+    }
+
+    // Three-endpoint time-series + recent errors for one workload.
+    async function cardDetail(w, meta, d) {
+      const rows = await fetchJSON(`/measurements?workload=${w}&hours=${WINDOW}&limit=5000`) || [];
+      const ok = rows.filter(r => r.ok && r.metrics && r.metrics[d.metric] != null);
+      const series = {};
+      for (const ep of ["local","cloud","real"]) {
+        const pts = ok.filter(r => r.endpoint === ep)
+                      .map(r => ({ t:new Date(r.ts).getTime(), v:r.metrics[d.metric] }));
+        if (pts.length) series[ep] = pts;
+      }
+      const vals = Object.values(series).flat().map(p=>p.v);
+      const range = vals.length ? `range ${meta.fmt(Math.min(...vals))} – ${meta.fmt(Math.max(...vals))}` : "";
+      const legend = Object.keys(series).map(ep =>
+        `<span><span class="dot" style="background:${EP_COLOR[ep]}"></span>${EP[ep]}</span>`).join("");
+      const errs = rows.filter(r => !r.ok).slice(0, 5);
+      const errHtml = errs.length
+        ? `<div class="errs">${errs.map(e => `<div class="e">${new Date(e.ts).toLocaleTimeString()} · ${EP[e.endpoint] || e.endpoint} · ${e.error || "failed"}</div>`).join("")}</div>`
+        : `<div class="axis" style="margin-top:.4rem"><span>no errors in this window</span></div>`;
+      return `<div class="legend">${legend}<span style="margin-left:auto">${range}</span></div>
+        ${lineChart(series)}
+        <div class="axis"><span>oldest</span><span>latest</span></div>${errHtml}`;
+    }
+
+    // Signal + CPU-temp trend from record context.
+    async function ctxDetail() {
+      const rows = await fetchJSON(`/measurements?hours=${WINDOW}&limit=1000`) || [];
+      const c = rows.filter(r => r.context && r.context.rssi_dbm != null)
+                    .map(r => ({ t:new Date(r.ts).getTime(), rssi:r.context.rssi_dbm, temp:r.context.cpu_temp_c }));
+      if (c.length < 2) return "Not enough context samples yet.";
+      const rssi = { local:c.map(p=>({t:p.t,v:p.rssi})) };
+      const temp = { real:c.map(p=>({t:p.t,v:p.temp})) };
+      const rr = c.map(p=>p.rssi), tt = c.map(p=>p.temp);
+      return `<div class="ctxcharts">
+        <div><div class="axis"><span>Signal (dBm)</span><span>${Math.min(...rr)} – ${Math.max(...rr)}</span></div>${lineChart(rssi)}</div>
+        <div><div class="axis"><span>CPU temp (°C)</span><span>${Math.min(...tt)} – ${Math.max(...tt)}</span></div>${lineChart(temp)}</div>
+      </div>`;
+    }
+
     async function load() {
-      const s = await fetch(`${API}/summary?hours=24`).then(r => r.json());
+     try {
+      // Reset the context panel: window may have changed.
+      const cd = document.getElementById("ctxdetail");
+      cd.className = "detail"; cd.innerHTML = ""; delete cd.dataset.filled;
+
+      const s = await fetchJSON(`/summary?hours=${WINDOW}`);
+      window.__S = s;
       const headline = document.getElementById("headline");
       headline.textContent = s.headline;
       headline.className = "pill " + s.overall;
 
-      // Segment column
+      // Segments: each is clickable, with a detail panel right after it.
       const segEl = document.getElementById("segments");
       segEl.innerHTML = "";
       for (const [key, meta] of Object.entries(SEGS)) {
-        const isCause = s.likely_cause === key;
-        const seg = s.segments[key];  // "ok" | "suspect" | "no_data"
+        const isCause = s.likely_cause === key, seg = s.segments[key];
         const cls = seg === "ok" ? "good" : seg === "no_data" ? "no_data" : "slow";
-        const label = isCause ? "LIKELY CAUSE"
-          : seg === "ok" ? "OK" : seg === "no_data" ? "NOT MEASURED" : "SUSPECT";
+        const label = isCause ? "LIKELY CAUSE" : seg === "ok" ? "OK" : seg === "no_data" ? "NOT MEASURED" : "SUSPECT";
         segEl.insertAdjacentHTML("beforeend", `
-          <div class="seg ${isCause ? "cause" : ""}">
+          <div class="seg ${isCause ? "cause" : ""}" data-key="${key}">
             <div><div class="name">${meta.name}</div><div class="desc">${meta.desc}</div></div>
-            <span class="pill ${cls}">${label}</span>
-          </div>`);
+            <div><span class="pill ${cls}">${label}</span><span class="caret">›</span></div>
+          </div>
+          <div class="detail" data-seg="${key}"></div>`);
       }
 
-      // Workload cards with sparklines from the raw series (real endpoint)
+      // Cards: three-way breakdown + threshold; click to expand chart + errors.
       const cards = document.getElementById("cards");
       cards.innerHTML = "";
       for (const [w, meta] of Object.entries(CARDS)) {
         const d = s.workloads[w];
-        const rows = await fetch(`${API}/measurements?workload=${w}&endpoint=real&hours=24`)
-          .then(r => r.json()).catch(() => []);
+        const rows = await fetchJSON(`/measurements?workload=${w}&endpoint=real&hours=${WINDOW}`) || [];
         const series = rows.filter(r => r.ok && r.metrics[d.metric] != null)
                            .map(r => r.metrics[d.metric]).reverse();
+        const thr = `Healthy ${d.lower_is_better ? "under" : "over"} ${meta.fmt(d.good)}`;
+        const triple = ["local","cloud","real"].map(ep => {
+          const v = d.per_endpoint[ep];
+          return `<div class="t"><span class="tl">${EP[ep]}</span>
+            <span class="tv ${d.endpoint_status[ep]}">${v != null ? meta.fmt(v) : "–"}</span></div>`;
+        }).join("");
         cards.insertAdjacentHTML("beforeend", `
-          <div class="card">
-            <div style="display:flex;justify-content:space-between">
-              <h3>${meta.title}</h3>
-              <span class="pill ${d.status}">${STATUS_WORD[d.status]}</span>
+          <div class="card" data-w="${w}">
+            <div class="head">
+              <div><h3>${meta.title}</h3><div class="sub">${meta.sub}</div></div>
+              <div><span class="pill ${d.status}">${STATUS_WORD[d.status]}</span><span class="caret">›</span></div>
             </div>
-            <div class="sub">${meta.sub}</div>
             <div class="big">${d.value != null ? meta.fmt(d.value) : "–"}</div>
+            <div class="thr">${thr}</div>
             ${spark(series, d.status)}
+            <div class="triple">${triple}</div>
+            <div class="detail" data-card="${w}"></div>
           </div>`);
       }
 
-      document.getElementById("live").textContent = "Live";
-      document.getElementById("updated").textContent =
-        "Last updated: " + new Date().toLocaleString() + " (24 h window)";
+      // Footer: probe context + true last-updated with staleness.
+      const recent = await fetchJSON(`/measurements?hours=${WINDOW}&limit=50`) || [];
+      const live = document.getElementById("live"), probe = document.getElementById("probe");
+      if (recent.length) {
+        const latest = new Date(recent[0].ts);
+        const ageMin = Math.max(0, Math.round((Date.now() - latest) / 60000));
+        const stale = ageMin > 15;
+        live.textContent = stale ? `No data for ${ageMin} min` : "Live";
+        live.className = "live" + (stale ? " stale" : "");
+        const probeId = recent[0].probe_id || "probe";
+        const ctx = (recent.find(r => r.context) || {}).context;
+        if (ctx) {
+          const sig = ctx.rssi_dbm != null ? `Signal ${sigQuality(ctx.rssi_dbm)} (${ctx.rssi_dbm} dBm)` : "";
+          probe.className = "probe-link";
+          probe.innerHTML = `${probeId} · ${sig} · ch ${ctx.wifi_channel ?? "?"} · ` +
+            `<span class="temp ${tempClass(ctx.cpu_temp_c)}">${ctx.cpu_temp_c ?? "?"} °C</span>`;
+        } else { probe.className = ""; probe.textContent = probeId; }
+        document.getElementById("updated").textContent =
+          `Last updated ${latest.toLocaleString()} · ${ageMin} min ago · ${WINDOW} h window`;
+      } else {
+        live.textContent = "No measurements yet"; live.className = "live";
+      }
+     } catch (e) {
+      document.getElementById("headline").textContent = "Dashboard unavailable";
+      document.getElementById("live").textContent = "error";
+     }
     }
+
+    // Window toggle.
+    document.getElementById("windows").addEventListener("click", e => {
+      const b = e.target.closest("button"); if (!b) return;
+      WINDOW = +b.dataset.h;
+      [...e.currentTarget.children].forEach(x => x.classList.toggle("active", x === b));
+      load();
+    });
+
+    // Expand a segment.
+    document.getElementById("segments").addEventListener("click", e => {
+      const seg = e.target.closest(".seg"); if (!seg) return;
+      const det = seg.nextElementSibling;
+      if (!det.dataset.filled) { det.innerHTML = segDetail(seg.dataset.key, window.__S); det.dataset.filled = "1"; }
+      det.classList.toggle("open"); seg.classList.toggle("open");
+    });
+
+    // Expand a card (ignore clicks inside its own detail panel).
+    document.getElementById("cards").addEventListener("click", async e => {
+      if (e.target.closest(".detail")) return;
+      const card = e.target.closest(".card"); if (!card) return;
+      const det = card.querySelector(".detail"), w = card.dataset.w;
+      card.classList.toggle("open");
+      if (!det.dataset.filled) {
+        det.classList.add("open"); det.innerHTML = "loading…";
+        det.innerHTML = await cardDetail(w, CARDS[w], window.__S.workloads[w]);
+        det.dataset.filled = "1";
+      } else det.classList.toggle("open");
+    });
+
+    // Expand the probe context trend.
+    document.getElementById("probe").addEventListener("click", async () => {
+      const det = document.getElementById("ctxdetail");
+      if (!det.dataset.filled) {
+        det.classList.add("open"); det.innerHTML = "loading…";
+        det.innerHTML = await ctxDetail(); det.dataset.filled = "1";
+      } else det.classList.toggle("open");
+    });
+
     load();
     setInterval(load, 5 * 60 * 1000);  // refresh with the heavy cadence
   </script>

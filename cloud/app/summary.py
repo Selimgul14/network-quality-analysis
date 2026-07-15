@@ -73,7 +73,7 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     endpoint_has_data = {"local": False, "cloud": False, "real": False}
 
     for w in WORKLOAD_METRIC:
-        metric, _, _, unit = WORKLOAD_METRIC[w]
+        metric, good, poor, unit = WORKLOAD_METRIC[w]
         values = {ep: _median_metric(rows, w, ep) for ep in ("local", "cloud", "real")}
         for ep, v in values.items():
             if v is not None:
@@ -88,6 +88,9 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         workloads[w] = {
             "metric": metric,
             "unit": unit,
+            "good": good,
+            "poor": poor,
+            "lower_is_better": w in LOWER_IS_BETTER,
             "value": headline,
             "status": _status(w, headline),
             "per_endpoint": values,

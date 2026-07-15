@@ -40,8 +40,11 @@ def targets_for(workload: str) -> list[Endpoint]:
         return [Endpoint("real", real)]
 
     path = REF_PATHS.get(workload, "/")
-    return [
-        Endpoint("local", settings.local_base + path),
-        Endpoint("cloud", settings.cloud_base + path),
-        Endpoint("real", real),
-    ]
+    eps: list[Endpoint] = []
+    # local server may be absent (e.g. Pi on eduroam): skip cleanly rather
+    # than record failures against a bare, unreachable path.
+    if settings.local_base:
+        eps.append(Endpoint("local", settings.local_base + path))
+    eps.append(Endpoint("cloud", settings.cloud_base + path))
+    eps.append(Endpoint("real", real))
+    return eps
