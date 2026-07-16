@@ -10,6 +10,9 @@ class ProbeSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PROBE_", env_file=".env", extra="ignore")
 
     probe_id: str = "pi-dev-01"
+    # Deployment label (network/location) stamped on every record. Set per
+    # deployment, e.g. PROBE_SITE=liverpool-eduroam-library. Empty -> null.
+    site: str = ""
 
     # Backend ingestion
     ingest_url: str = "http://localhost:8000/ingest"

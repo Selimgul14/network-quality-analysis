@@ -13,7 +13,7 @@ import secrets
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -71,6 +71,7 @@ def ingest(m: Measurement, db: Session = Depends(get_db)) -> dict[str, str]:
     row = models.Measurement(
         ts=m.ts,
         probe_id=m.probe_id,
+        site=m.site,
         run_id=m.run_id,
         workload=m.workload,
         endpoint=m.endpoint,
@@ -104,22 +105,44 @@ async def ingest_raw(key: str, request: Request) -> dict:
     return {"key": upload_raw(key, body)}
 
 
-def _rows_since(db: Session, hours: int) -> list[models.Measurement]:
+def _rows_since(db: Session, hours: int, site: str | None = None) -> list[models.Measurement]:
     since = datetime.now(timezone.utc) - timedelta(hours=hours)
-    return list(db.scalars(select(models.Measurement).where(models.Measurement.ts >= since)))
+    q = select(models.Measurement).where(models.Measurement.ts >= since)
+    if site:
+        q = q.where(models.Measurement.site == site)
+    return list(db.scalars(q))
 
 
 @app.get("/summary", dependencies=[Depends(require_dash_auth)])
 def summary(
     hours: int = Query(default=24, ge=1, le=336),
+    site: str | None = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """End-user summary: per-workload status + where-is-the-slowness."""
+    """End-user summary: per-workload status + where-is-the-slowness.
+
+    Pass `site` to scope the summary to one deployment (network/location).
+    """
     rows = [
         {"workload": r.workload, "endpoint": r.endpoint, "ok": r.ok, "metrics": r.metrics}
-        for r in _rows_since(db, hours)
+        for r in _rows_since(db, hours, site)
     ]
     return compute_summary(rows, hours)
+
+
+@app.get("/sites", dependencies=[Depends(require_dash_auth)])
+def sites(db: Session = Depends(get_db)) -> list[dict]:
+    """Distinct deployment sites with a record count and last-seen time,
+    for the dashboard's site picker."""
+    rows = db.execute(
+        select(models.Measurement.site, func.count(), func.max(models.Measurement.ts))
+        .group_by(models.Measurement.site)
+        .order_by(func.max(models.Measurement.ts).desc())
+    ).all()
+    return [
+        {"site": site or "unlabelled", "count": n, "last_seen": ts.isoformat() if ts else None}
+        for site, n, ts in rows
+    ]
 
 
 @app.get("/", dependencies=[Depends(require_dash_auth)])
@@ -131,6 +154,7 @@ def summary_page() -> FileResponse:
 def measurements(
     workload: str | None = None,
     endpoint: str | None = None,
+    site: str | None = None,
     hours: int = Query(default=24, ge=1, le=336),
     limit: int = Query(default=5000, ge=1, le=50000),
     db: Session = Depends(get_db),
@@ -141,12 +165,16 @@ def measurements(
         q = q.where(models.Measurement.workload == workload)
     if endpoint:
         q = q.where(models.Measurement.endpoint == endpoint)
+    if site:
+        q = q.where(models.Measurement.site == site)
     q = q.order_by(models.Measurement.ts.desc()).limit(limit)
     rows = db.scalars(q).all()
     return [
         {
             "ts": r.ts.isoformat(),
             "probe_id": r.probe_id,
+            "site": r.site,
+            "net_hash": r.net_hash,
             "run_id": r.run_id,
             "workload": r.workload,
             "endpoint": r.endpoint,

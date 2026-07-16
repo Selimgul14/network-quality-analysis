@@ -17,11 +17,14 @@ class Context(BaseModel):
     wifi_channel: int | None = None
     rssi_dbm: float | None = None
     cpu_temp_c: float | None = None
+    ssid: str | None = None
+    bssid: str | None = None
 
 
 class Measurement(BaseModel):
     ts: datetime
     probe_id: str
+    site: str | None = None
     run_id: str
     workload: Workload
     endpoint: EndpointName

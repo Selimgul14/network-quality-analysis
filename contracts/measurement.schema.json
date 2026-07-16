@@ -16,6 +16,10 @@
       "type": "string",
       "description": "Stable probe identifier, e.g. 'pi-maple-01'."
     },
+    "site": {
+      "type": ["string", "null"],
+      "description": "Human deployment label, e.g. 'liverpool-eduroam-library'. Set via PROBE_SITE; groups results by network/location. Null when unset."
+    },
     "run_id": {
       "type": "string",
       "description": "Groups the three endpoint runs of one scheduled heavy workload."
@@ -53,7 +57,9 @@
       "properties": {
         "wifi_channel": { "type": ["integer", "null"] },
         "rssi_dbm": { "type": ["number", "null"] },
-        "cpu_temp_c": { "type": ["number", "null"] }
+        "cpu_temp_c": { "type": ["number", "null"] },
+        "ssid": { "type": ["string", "null"], "description": "Network name of the WiFi under test." },
+        "bssid": { "type": ["string", "null"], "description": "MAC of the associated AP; distinguishes same-SSID networks (e.g. eduroam) across locations." }
       }
     },
     "raw_ref": {

@@ -29,14 +29,24 @@ def _iw(*args: str) -> str:
 
 
 def _wifi() -> dict[str, object | None]:
-    rssi = channel = None
-    # `iw dev wlan0 link` -> "signal: -52 dBm"
+    rssi = channel = ssid = bssid = None
+    # `iw dev wlan0 link` ->
+    #   Connected to 11:22:33:44:55:66 (on wlan0)
+    #           SSID: eduroam
+    #           signal: -52 dBm
     for line in _iw("link").splitlines():
-        if "signal:" in line:
+        s = line.strip()
+        if "signal:" in s:
             try:
-                rssi = float(line.split()[1])
+                rssi = float(s.split()[1])
             except (ValueError, IndexError):
                 pass
+        elif s.startswith("Connected to"):
+            parts = s.split()
+            if len(parts) >= 3:
+                bssid = parts[2]
+        elif s.startswith("SSID:"):
+            ssid = s.split("SSID:", 1)[1].strip() or None
     # `iw dev wlan0 info` -> "channel 36 (5180 MHz), width: 80 MHz, ..."
     for line in _iw("info").splitlines():
         if line.strip().startswith("channel"):
@@ -44,7 +54,7 @@ def _wifi() -> dict[str, object | None]:
                 channel = int(line.split()[1])
             except (ValueError, IndexError):
                 pass
-    return {"wifi_channel": channel, "rssi_dbm": rssi}
+    return {"wifi_channel": channel, "rssi_dbm": rssi, "ssid": ssid, "bssid": bssid}
 
 
 def snapshot() -> dict[str, object | None]:

@@ -30,3 +30,5 @@ class Measurement(Base):
     context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     raw_ref: Mapped[str | None] = mapped_column(String, nullable=True)
     net_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Deployment label for grouping results by network/location.
+    site: Mapped[str | None] = mapped_column(String, nullable=True, index=True)

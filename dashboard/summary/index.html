@@ -61,12 +61,26 @@
     .ctxcharts { display:flex; gap:1rem; } .ctxcharts > div { flex:1; }
     .probe-link { cursor:pointer; text-decoration:underline dotted; }
     .temp.warn { color:var(--amber); font-weight:700; } .temp.hot { color:var(--red); font-weight:700; }
+    .hdr-right { display:flex; gap:1rem; align-items:center; }
+    .sitesel { font:inherit; font-size:.8rem; padding:.25rem .5rem; border:1px solid var(--line);
+               border-radius:8px; color:var(--ink); background:#fff; cursor:pointer; }
+    .compare { margin-top:1rem; }
+    table.cmp { width:100%; border-collapse:collapse; font-size:.85rem; margin-top:.4rem; }
+    table.cmp th, table.cmp td { text-align:left; padding:.4rem .55rem; border-bottom:1px solid var(--line); }
+    table.cmp th { color:var(--mute); font-weight:400; font-size:.78rem; }
+    table.cmp td.v { font-weight:700; }
     footer { color:var(--mute); font-size:.85rem; display:flex; justify-content:space-between; margin:1.5rem 0 .3rem; }
     @media (max-width:900px){ .layout,.cards { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
-  <header><span>Remote WiFi Performance Tool</span><span class="live" id="live">loading…</span></header>
+  <header>
+    <span>Remote WiFi Performance Tool</span>
+    <span class="hdr-right">
+      <select id="siteSel" class="sitesel" title="Filter by network / location"></select>
+      <span class="live" id="live">loading…</span>
+    </span>
+  </header>
   <main>
     <div class="banner">
       <div class="banner-top">
@@ -89,6 +103,12 @@
       <div class="cards" id="cards"></div>
     </div>
 
+    <div class="side compare" id="compare" style="display:none">
+      <h2 style="margin-top:0">Compare networks</h2>
+      <p class="sub" style="color:var(--mute);font-size:.9rem">The same tasks, each network side by side. What you'd actually experience.</p>
+      <div id="compareBody"></div>
+    </div>
+
     <footer><span id="probe"></span><span id="updated"></span></footer>
     <div id="ctxdetail" class="detail"></div>
   </main>
@@ -96,7 +116,9 @@
   <script>
     const API = window.API_BASE || "";      // same origin by default
     let WINDOW = 24;                          // active time window (hours)
+    let SITE = "";                            // "" = all networks; else a site label
     const fetchJSON = (p) => fetch(`${API}${p}`).then(r => r.json()).catch(() => null);
+    const siteQ = () => SITE ? "&site=" + encodeURIComponent(SITE) : "";
 
     const CARDS = {
       web:      { title:"Web browsing",    sub:"Page load time",      fmt:v => v>=1000 ? (v/1000).toFixed(1)+" s" : Math.round(v)+" ms" },
@@ -166,7 +188,7 @@
 
     // Three-endpoint time-series + recent errors for one workload.
     async function cardDetail(w, meta, d) {
-      const rows = await fetchJSON(`/measurements?workload=${w}&hours=${WINDOW}&limit=5000`) || [];
+      const rows = await fetchJSON(`/measurements?workload=${w}&hours=${WINDOW}&limit=5000${siteQ()}`) || [];
       const ok = rows.filter(r => r.ok && r.metrics && r.metrics[d.metric] != null);
       const series = {};
       for (const ep of ["local","cloud","real"]) {
@@ -189,7 +211,7 @@
 
     // Signal + CPU-temp trend from record context.
     async function ctxDetail() {
-      const rows = await fetchJSON(`/measurements?hours=${WINDOW}&limit=1000`) || [];
+      const rows = await fetchJSON(`/measurements?hours=${WINDOW}&limit=1000${siteQ()}`) || [];
       const c = rows.filter(r => r.context && r.context.rssi_dbm != null)
                     .map(r => ({ t:new Date(r.ts).getTime(), rssi:r.context.rssi_dbm, temp:r.context.cpu_temp_c }));
       if (c.length < 2) return "Not enough context samples yet.";
@@ -202,13 +224,45 @@
       </div>`;
     }
 
+    // Cross-network table: same tasks, each site side by side.
+    async function renderCompare() {
+      const wrap = document.getElementById("compare");
+      const sites = (await fetchJSON(`/sites`) || []).filter(s => s.site && s.site !== "unlabelled");
+      if (sites.length < 2) { wrap.style.display = "none"; return; }
+      const wl = Object.keys(CARDS);
+      const per = {};
+      for (const s of sites) per[s.site] = await fetchJSON(`/summary?hours=${WINDOW}&site=${encodeURIComponent(s.site)}`);
+      let html = `<table class="cmp"><tr><th>Network</th>${wl.map(w => `<th>${CARDS[w].title}</th>`).join("")}</tr>`;
+      for (const s of sites) {
+        const sm = per[s.site];
+        const cells = wl.map(w => {
+          const d = sm && sm.workloads[w];
+          return `<td class="v ${d ? d.status : "no_data"}">${d && d.value != null ? CARDS[w].fmt(d.value) : "–"}</td>`;
+        }).join("");
+        html += `<tr><td>${s.site}</td>${cells}</tr>`;
+      }
+      document.getElementById("compareBody").innerHTML = html + `</table>`;
+      wrap.style.display = "";
+    }
+
+    // Populate the network picker once; changing it re-queries everything.
+    async function initSites() {
+      const sel = document.getElementById("siteSel");
+      const sites = await fetchJSON(`/sites`) || [];
+      const named = sites.filter(s => s.site && s.site !== "unlabelled");
+      sel.innerHTML = [`<option value="">All networks</option>`].concat(
+        named.map(s => `<option value="${s.site}">${s.site} (${s.count})</option>`)).join("");
+      sel.value = SITE;
+      sel.onchange = () => { SITE = sel.value; load(); };
+    }
+
     async function load() {
      try {
       // Reset the context panel: window may have changed.
       const cd = document.getElementById("ctxdetail");
       cd.className = "detail"; cd.innerHTML = ""; delete cd.dataset.filled;
 
-      const s = await fetchJSON(`/summary?hours=${WINDOW}`);
+      const s = await fetchJSON(`/summary?hours=${WINDOW}${siteQ()}`);
       window.__S = s;
       const headline = document.getElementById("headline");
       headline.textContent = s.headline;
@@ -234,7 +288,7 @@
       cards.innerHTML = "";
       for (const [w, meta] of Object.entries(CARDS)) {
         const d = s.workloads[w];
-        const rows = await fetchJSON(`/measurements?workload=${w}&endpoint=real&hours=${WINDOW}`) || [];
+        const rows = await fetchJSON(`/measurements?workload=${w}&endpoint=real&hours=${WINDOW}${siteQ()}`) || [];
         const series = rows.filter(r => r.ok && r.metrics[d.metric] != null)
                            .map(r => r.metrics[d.metric]).reverse();
         const thr = `Healthy ${d.lower_is_better ? "under" : "over"} ${meta.fmt(d.good)}`;
@@ -258,7 +312,7 @@
       }
 
       // Footer: probe context + true last-updated with staleness.
-      const recent = await fetchJSON(`/measurements?hours=${WINDOW}&limit=50`) || [];
+      const recent = await fetchJSON(`/measurements?hours=${WINDOW}&limit=50${siteQ()}`) || [];
       const live = document.getElementById("live"), probe = document.getElementById("probe");
       if (recent.length) {
         const latest = new Date(recent[0].ts);
@@ -266,19 +320,24 @@
         const stale = ageMin > 15;
         live.textContent = stale ? `No data for ${ageMin} min` : "Live";
         live.className = "live" + (stale ? " stale" : "");
-        const probeId = recent[0].probe_id || "probe";
+        const rec0 = recent[0];
+        const probeId = rec0.probe_id || "probe";
+        const sitePart = rec0.site ? `${rec0.site} · ` : "";
+        const netPart = rec0.net_hash ? ` · net ${rec0.net_hash}` : "";
         const ctx = (recent.find(r => r.context) || {}).context;
         if (ctx) {
           const sig = ctx.rssi_dbm != null ? `Signal ${sigQuality(ctx.rssi_dbm)} (${ctx.rssi_dbm} dBm)` : "";
+          const ssidPart = ctx.ssid ? `${ctx.ssid} · ` : "";
           probe.className = "probe-link";
-          probe.innerHTML = `${probeId} · ${sig} · ch ${ctx.wifi_channel ?? "?"} · ` +
-            `<span class="temp ${tempClass(ctx.cpu_temp_c)}">${ctx.cpu_temp_c ?? "?"} °C</span>`;
-        } else { probe.className = ""; probe.textContent = probeId; }
+          probe.innerHTML = `${sitePart}${probeId} · ${ssidPart}${sig} · ch ${ctx.wifi_channel ?? "?"} · ` +
+            `<span class="temp ${tempClass(ctx.cpu_temp_c)}">${ctx.cpu_temp_c ?? "?"} °C</span>${netPart}`;
+        } else { probe.className = ""; probe.textContent = sitePart + probeId; }
         document.getElementById("updated").textContent =
           `Last updated ${latest.toLocaleString()} · ${ageMin} min ago · ${WINDOW} h window`;
       } else {
         live.textContent = "No measurements yet"; live.className = "live";
       }
+      renderCompare();
      } catch (e) {
       document.getElementById("headline").textContent = "Dashboard unavailable";
       document.getElementById("live").textContent = "error";
@@ -323,6 +382,7 @@
       } else det.classList.toggle("open");
     });
 
+    initSites();
     load();
     setInterval(load, 5 * 60 * 1000);  // refresh with the heavy cadence
   </script>

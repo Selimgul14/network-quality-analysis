@@ -13,6 +13,7 @@ from .buffer import Buffer
 from .config import settings
 from .context import snapshot
 from .endpoints import targets_for
+from .netid import net_hash
 from .uploader import flush
 from .workloads import baseline, download, email, path, video, web
 
@@ -24,13 +25,14 @@ def _record(workload: str, endpoint: str, target: str, run_id: str) -> dict:
     base = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "probe_id": settings.probe_id,
+        "site": settings.site or None,
         "run_id": run_id,
         "workload": workload,
         "endpoint": endpoint,
         "target": target,
         "context": snapshot(),
         "raw_ref": None,
-        "net_hash": None,
+        "net_hash": net_hash(),
     }
     try:
         module = HEAVY[workload] if workload in HEAVY else baseline
