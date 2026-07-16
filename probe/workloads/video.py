@@ -19,6 +19,10 @@ MAX_WATCH_S = 30.0      # cap how much of the stream one run consumes
 
 DIRECT_SUFFIXES = (".mp4", ".webm", ".mkv", ".m4v")
 
+# Some CDNs 403 non-browser clients (ffmpeg's default UA). Present a normal
+# browser UA so the video leg is not blocked by hotlink protection.
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
 
 def _resolve(target: str) -> str:
     """Return a direct media URL, using yt-dlp for page URLs."""
@@ -34,7 +38,8 @@ def _resolve(target: str) -> str:
 
 def _ffprobe(url: str) -> dict:
     out = subprocess.run(
-        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", url],
+        ["ffprobe", "-v", "quiet", "-user_agent", UA,
+         "-print_format", "json", "-show_format", url],
         capture_output=True, text=True, timeout=30, check=True,
     ).stdout
     return json.loads(out)["format"]
@@ -54,7 +59,8 @@ def run(target: str) -> dict[str, float]:
     rebuffer_count, rebuffer_ms = 0, 0.0
     bytes_dl = 0
 
-    with httpx.stream("GET", url, timeout=30.0, follow_redirects=True) as r:
+    with httpx.stream("GET", url, timeout=30.0, follow_redirects=True,
+                      headers={"User-Agent": UA}) as r:
         r.raise_for_status()
         for chunk in r.iter_bytes():
             bytes_dl += len(chunk)
