@@ -28,8 +28,11 @@ WORKLOADS = {
     "path": path,
     "loadlat": loadlat,
 }
-# The ones that run against all three endpoints each heavy cycle.
-HEAVY = ("web", "video", "email", "download")
+# Application workloads that run against all three endpoints each heavy
+# cycle. Cheap enough for a 5 min cadence.
+HEAVY = ("web", "video", "email")
+# Bandwidth-heavy workloads, on the slower transfer cadence.
+TRANSFER = ("download",)
 
 
 def _record(workload: str, endpoint: str, target: str, run_id: str) -> dict:
@@ -77,7 +80,16 @@ def run_heavy(buffer: Buffer) -> None:
         rec["raw_ref"] = f"{settings.probe_id}/{run_id}-path.json"
         rec["_raw"] = path.last_raw.decode()
     buffer.add(rec)
+    flush(buffer)
 
+
+def run_transfer(buffer: Buffer) -> None:
+    """Bandwidth-heavy workloads: throughput and latency-under-load."""
+    run_id = uuid.uuid4().hex
+    for workload in TRANSFER:
+        for ep in targets_for(workload):
+            if ep.label:
+                buffer.add(_record(workload, ep.name, ep.label, run_id))
     # Latency under load: needs a target big enough to saturate the link.
     load_target = settings.real_download or (
         settings.cloud_base + REF_PATHS["download"]

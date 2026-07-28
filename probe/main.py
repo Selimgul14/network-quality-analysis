@@ -11,7 +11,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 
 from .buffer import Buffer
 from .config import settings
-from .scheduler import run_baseline, run_heavy
+from .scheduler import run_baseline, run_heavy, run_transfer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("probe")
@@ -27,8 +27,11 @@ def main() -> None:
                   args=[buffer], id="baseline", max_instances=1, next_run_time=now)
     sched.add_job(run_heavy, "interval", seconds=settings.heavy_interval_s,
                   args=[buffer], id="heavy", max_instances=1, next_run_time=now)
-    log.info("probe %s starting: baseline %ss, heavy %ss",
-             settings.probe_id, settings.baseline_interval_s, settings.heavy_interval_s)
+    sched.add_job(run_transfer, "interval", seconds=settings.transfer_interval_s,
+                  args=[buffer], id="transfer", max_instances=1, next_run_time=now)
+    log.info("probe %s starting: baseline %ss, heavy %ss, transfer %ss",
+             settings.probe_id, settings.baseline_interval_s,
+             settings.heavy_interval_s, settings.transfer_interval_s)
     sched.start()
 
 

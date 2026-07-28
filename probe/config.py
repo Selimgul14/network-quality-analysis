@@ -31,6 +31,10 @@ class ProbeSettings(BaseSettings):
     # Cadences (seconds)
     baseline_interval_s: int = 10
     heavy_interval_s: int = 300
+    # Bandwidth-heavy workloads (download, latency-under-load) run on their
+    # own slower cadence: at 5 min they would move ~15-20 GB/day, which
+    # risks a fair-use throttle and hammers the public test file.
+    transfer_interval_s: int = 3600
 
     # Local store-and-forward buffer
     buffer_path: str = "probe_buffer.sqlite"
