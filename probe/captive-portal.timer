@@ -1,0 +1,13 @@
+# Re-checks every 2 minutes. The check is one cheap HTTP request; a browser
+# only launches when a portal is actually in the way. This also re-accepts
+# automatically when the portal session expires mid-deployment.
+[Unit]
+Description=Periodically check for and accept a captive portal
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

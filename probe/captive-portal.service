@@ -1,0 +1,13 @@
+# Accepts a click-through captive portal when one blocks internet access.
+# Paired with captive-portal.timer; copy both to /etc/systemd/system/.
+[Unit]
+Description=Accept the captive portal if one is blocking internet access
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/probe
+# PLAYWRIGHT_BROWSERS_PATH lives here, so the browser is found when run as root
+EnvironmentFile=/opt/probe/.env
+ExecStart=/opt/probe/.venv/bin/python -m probe.captive_portal
