@@ -39,10 +39,20 @@ def _cmd(target: str) -> list[str]:
 
 
 def _hop_metrics(hubs: list[dict]) -> dict[str, float]:
-    """Per-hop RTT/loss, plus which segment adds the most latency."""
+    """Per-hop RTT/loss, plus which segment really adds the most latency.
+
+    Raw per-hop RTT is noisy in a way that misleads: routers deprioritise
+    the ICMP time-exceeded replies that traceroute depends on, so a hop can
+    report a large RTT while forwarding transit traffic perfectly. The
+    giveaway is that the spike does not persist at later hops.
+
+    Delay that is genuinely on the path must be paid by every hop beyond
+    it, so we smooth with a suffix minimum (each hop's RTT is capped by the
+    smallest RTT seen at or after it) before looking for the largest jump.
+    That discards transient spikes and keeps real, persistent increases.
+    """
     out: dict[str, float] = {}
-    prev_rtt = 0.0
-    worst_delta, worst_idx = 0.0, 0
+    responsive: list[tuple[int, float]] = []
 
     for hub in hubs:
         idx = int(hub.get("count", 0) or 0)
@@ -54,12 +64,26 @@ def _hop_metrics(hubs: list[dict]) -> dict[str, float]:
             if loss:
                 out[f"hop_{idx:02d}_loss_pct"] = round(loss, 2)
 
-        # Unresponsive hops report 0; skip them so they don't fake a delta.
-        if rtt > 0:
-            delta = max(0.0, rtt - prev_rtt)  # clamp jitter-induced negatives
-            if delta > worst_delta:
-                worst_delta, worst_idx = delta, idx
-            prev_rtt = rtt
+        if rtt > 0:  # unresponsive hops report 0; they tell us nothing
+            responsive.append((idx, rtt))
+
+    if not responsive:
+        return out
+
+    # Suffix minimum: the persistent cost of reaching each hop.
+    persistent = [0.0] * len(responsive)
+    running = float("inf")
+    for i in range(len(responsive) - 1, -1, -1):
+        running = min(running, responsive[i][1])
+        persistent[i] = running
+
+    worst_delta, worst_idx = 0.0, 0
+    prev = 0.0
+    for (idx, _), value in zip(responsive, persistent):
+        delta = value - prev
+        if delta > worst_delta:
+            worst_delta, worst_idx = delta, idx
+        prev = value
 
     if worst_idx:
         out["bottleneck_hop"] = float(worst_idx)

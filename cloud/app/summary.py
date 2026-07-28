@@ -24,6 +24,21 @@ WORKLOAD_METRIC = {
 }
 LOWER_IS_BETTER = {"web", "video", "email"}
 
+# Per-endpoint overrides. The local/cloud reference page is a small static
+# file; a real news site pulls megabytes across dozens of requests, so it
+# is legitimately slower and cannot be judged against the same line. The
+# question for the "real" endpoint is not "is it fast" but "is it slower
+# than this service normally is".
+ENDPOINT_THRESHOLDS = {
+    ("web", "real"): (4000, 8000),
+    ("video", "real"): (4000, 10000),
+}
+
+# The WiFi link can be judged from hop 1 of the path (the router over the
+# air) when no local reference server is available. Latency only.
+WIFI_LINK_GOOD_MS = 10.0
+WIFI_LINK_POOR_MS = 30.0
+
 SEGMENT_LABELS = {
     "wifi_link": "WiFi link",
     "internet_path": "Internet path",
@@ -45,14 +60,31 @@ def _median_metric(rows: list[dict], workload: str, endpoint: str) -> float | No
     return round(median(vals), 2) if vals else None
 
 
-def _status(workload: str, value: float | None) -> str:
+def _thresholds(workload: str, endpoint: str | None = None) -> tuple[float, float]:
+    """(good, poor) for a workload, honouring any per-endpoint override."""
+    _, good, poor, _ = WORKLOAD_METRIC[workload]
+    return ENDPOINT_THRESHOLDS.get((workload, endpoint), (good, poor))
+
+
+def _status(workload: str, value: float | None, endpoint: str | None = None) -> str:
     """good | degraded | poor | no_data for one median value."""
     if value is None:
         return "no_data"
-    _, good, poor, _ = WORKLOAD_METRIC[workload]
+    good, poor = _thresholds(workload, endpoint)
     if workload in LOWER_IS_BETTER:
         return "good" if value <= good else ("degraded" if value <= poor else "poor")
     return "good" if value >= good else ("degraded" if value >= poor else "poor")
+
+
+def _first_hop_rtt(rows: list[dict]) -> float | None:
+    """Median hop-1 RTT from the path workload: WiFi-link latency."""
+    vals = [
+        r["metrics"]["first_hop_rtt_ms"]
+        for r in rows
+        if r["workload"] == "path" and r["ok"]
+        and "first_hop_rtt_ms" in (r["metrics"] or {})
+    ]
+    return round(median(vals), 2) if vals else None
 
 
 def _attribute(per_endpoint: dict[str, str]) -> str | None:
@@ -78,13 +110,16 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         for ep, v in values.items():
             if v is not None:
                 endpoint_has_data[ep] = True
-        statuses = {ep: _status(w, v) for ep, v in values.items()}
+        statuses = {ep: _status(w, v, ep) for ep, v in values.items()}
         cause = _attribute(statuses)
         if cause:
             suspects.append(cause)
         # Headline value: the user-facing number is the real-world one,
-        # falling back to cloud/local when real has no data.
-        headline = values["real"] or values["cloud"] or values["local"]
+        # falling back to cloud/local when real has no data. The threshold
+        # shown must match whichever endpoint that value came from.
+        headline_ep = next((ep for ep in ("real", "cloud", "local") if values[ep]), None)
+        headline = values[headline_ep] if headline_ep else None
+        good, poor = _thresholds(w, headline_ep)
         workloads[w] = {
             "metric": metric,
             "unit": unit,
@@ -92,7 +127,7 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
             "poor": poor,
             "lower_is_better": w in LOWER_IS_BETTER,
             "value": headline,
-            "status": _status(w, headline),
+            "status": _status(w, headline, headline_ep),
             "per_endpoint": values,
             "endpoint_status": statuses,
             "likely_cause": cause,
@@ -109,6 +144,18 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         )
         for s in SEGMENT_LABELS
     }
+
+    # Without a local reference server the WiFi link would read "not
+    # measured". Hop 1 of the path is the router reached over the air, so
+    # it still gives a real (latency-only) verdict on the link.
+    first_hop = _first_hop_rtt(rows)
+    wifi_from_path = False
+    if segments["wifi_link"] == "no_data" and first_hop is not None:
+        wifi_from_path = True
+        segments["wifi_link"] = "ok" if first_hop <= WIFI_LINK_GOOD_MS else "suspect"
+        if first_hop > WIFI_LINK_GOOD_MS:
+            suspects.append("wifi_link")
+
     likely = max(set(suspects), key=suspects.count) if suspects else None
 
     statuses = [w["status"] for w in workloads.values() if w["status"] != "no_data"]
@@ -135,4 +182,8 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         "segments": segments,
         "likely_cause": likely,
         "workloads": workloads,
+        # WiFi-link latency from hop 1, and whether the segment verdict
+        # came from it rather than from a local reference server.
+        "wifi_link_rtt_ms": first_hop,
+        "wifi_link_from_path": wifi_from_path,
     }

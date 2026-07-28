@@ -38,10 +38,53 @@ def test_slow_cloud_blames_internet_path():
 
 
 def test_slow_real_blames_third_party():
-    # LAN and cloud fine, only the real service slow.
-    s = compute_summary(_web_rows(300, 800, 6000), hours=24)
+    # LAN and cloud fine, only the real service slow. Real sites are judged
+    # against their own threshold (4 s good / 8 s poor), so this is poor.
+    s = compute_summary(_web_rows(300, 800, 9000), hours=24)
     assert s["likely_cause"] == "third_party"
-    assert s["workloads"]["web"]["status"] == "poor"  # 6000 > poor threshold
+    assert s["workloads"]["web"]["status"] == "poor"
+
+
+def test_real_web_uses_its_own_threshold():
+    """A full news site is heavier than the reference page, so the same
+    load time is fine for 'real' but slow for the small cloud page."""
+    s = compute_summary(_web_rows(300, 800, 3600), hours=24)
+    assert s["workloads"]["web"]["endpoint_status"]["real"] == "good"
+    assert s["workloads"]["web"]["good"] == 4000  # threshold shown matches
+    assert s["likely_cause"] is None
+
+    slow_cloud = compute_summary(_web_rows(300, 3600, 800), hours=24)
+    assert slow_cloud["workloads"]["web"]["endpoint_status"]["cloud"] == "degraded"
+
+
+def test_wifi_link_falls_back_to_first_hop():
+    """With no local server, hop 1 still gives a latency verdict."""
+    rows = [
+        _row("web", "cloud", load_ms=300),
+        _row("web", "real", load_ms=900),
+        _row("path", "real", first_hop_rtt_ms=4.9),
+    ]
+    s = compute_summary(rows, hours=24)
+    assert s["segments"]["wifi_link"] == "ok"
+    assert s["wifi_link_from_path"] is True
+    assert s["wifi_link_rtt_ms"] == 4.9
+
+
+def test_slow_first_hop_makes_wifi_link_suspect():
+    rows = [
+        _row("web", "cloud", load_ms=300),
+        _row("path", "real", first_hop_rtt_ms=45.0),  # congested air link
+    ]
+    s = compute_summary(rows, hours=24)
+    assert s["segments"]["wifi_link"] == "suspect"
+
+
+def test_local_data_wins_over_first_hop():
+    """A real local server is the better evidence; keep using it."""
+    rows = _web_rows(300, 800, 900) + [_row("path", "real", first_hop_rtt_ms=99.0)]
+    s = compute_summary(rows, hours=24)
+    assert s["wifi_link_from_path"] is False
+    assert s["segments"]["wifi_link"] == "ok"
 
 
 def test_download_higher_is_better():
