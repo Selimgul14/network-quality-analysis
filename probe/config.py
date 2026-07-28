@@ -38,5 +38,9 @@ class ProbeSettings(BaseSettings):
     # Public anchors for baseline probes
     dns_anchors: list[str] = Field(default_factory=lambda: ["1.1.1.1", "8.8.8.8"])
 
+    # mtr in TCP mode gets per-hop data on networks that block ICMP echo.
+    mtr_tcp: bool = True
+    mtr_port: int = 443
+
 
 settings = ProbeSettings()

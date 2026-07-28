@@ -69,6 +69,19 @@
     table.cmp th, table.cmp td { text-align:left; padding:.4rem .55rem; border-bottom:1px solid var(--line); }
     table.cmp th { color:var(--mute); font-weight:400; font-size:.78rem; }
     table.cmp td.v { font-weight:700; }
+    .hop { display:flex; align-items:center; gap:.55rem; margin:.28rem 0; font-size:.82rem; }
+    .hop .hn { width:5.5rem; color:var(--mute); font-size:.72rem; text-align:right; }
+    .hop .hbarwrap { flex:1; background:#f0f4f7; border-radius:4px; height:15px; }
+    .hop .hbar { height:100%; border-radius:4px; background:var(--c-cloud); min-width:2px; }
+    .hop .hbar.wifi { background:var(--c-local); }
+    .hop .hbar.bottleneck { background:var(--amber); }
+    .hop .hv { width:4.6rem; text-align:right; font-weight:700; }
+    .hop.dead .hv, .hop.dead .hn { color:#a8b6c2; font-weight:400; }
+    .bloat { display:flex; gap:.6rem; margin-top:.7rem; }
+    .bloat .b { flex:1; background:#f5f8fa; border:1px solid var(--line); border-radius:8px;
+                padding:.45rem .5rem; text-align:center; }
+    .bloat .bl { display:block; color:var(--mute); font-size:.68rem; margin-bottom:.1rem; }
+    .bloat .bv { font-weight:700; font-size:.95rem; }
     footer { color:var(--mute); font-size:.85rem; display:flex; justify-content:space-between; margin:1.5rem 0 .3rem; }
     @media (max-width:900px){ .layout,.cards { grid-template-columns:1fr; } }
   </style>
@@ -101,6 +114,13 @@
         <div id="segments"></div>
       </div>
       <div class="cards" id="cards"></div>
+    </div>
+
+    <div class="side compare" id="pathPanel" style="display:none">
+      <h2 style="margin-top:0">The path your traffic takes</h2>
+      <p class="sub" style="color:var(--mute);font-size:.9rem">Each hop between this device and the internet, and how much delay it adds.</p>
+      <div id="hops"></div>
+      <div id="bloat"></div>
     </div>
 
     <div class="side compare" id="compare" style="display:none">
@@ -224,6 +244,67 @@
       </div>`;
     }
 
+    // Bufferbloat grade from the added latency, in ms.
+    function bloatGrade(ms) {
+      if (ms < 30)  return ["A", "good",     "barely notices load"];
+      if (ms < 60)  return ["B", "good",     "holds up under load"];
+      if (ms < 100) return ["C", "degraded", "calls may wobble when busy"];
+      if (ms < 200) return ["D", "degraded", "calls and games suffer when busy"];
+      return ["F", "poor", "unusable for calls while downloading"];
+    }
+
+    // Hop-by-hop latency + latency under load.
+    async function renderPath() {
+      const wrap = document.getElementById("pathPanel");
+      const paths = await fetchJSON(`/measurements?workload=path&hours=${WINDOW}&limit=200${siteQ()}`) || [];
+      const loads = await fetchJSON(`/measurements?workload=loadlat&hours=${WINDOW}&limit=200${siteQ()}`) || [];
+      const p = paths.find(r => r.ok && r.metrics && r.metrics.hops);
+      const l = loads.find(r => r.ok && r.metrics && r.metrics.bloat_ms != null);
+      if (!p && !l) { wrap.style.display = "none"; return; }
+
+      const hopsEl = document.getElementById("hops");
+      if (p) {
+        // Rebuild the hop profile from the hop_NN_rtt_ms metric keys.
+        const hops = Object.entries(p.metrics)
+          .map(([k, v]) => { const m = /^hop_(\d+)_rtt_ms$/.exec(k); return m ? { n:+m[1], rtt:v } : null; })
+          .filter(Boolean).sort((a, b) => a.n - b.n);
+        const bottleneck = p.metrics.bottleneck_hop;
+        const max = Math.max(...hops.map(h => h.rtt), 1);
+        hopsEl.innerHTML = hops.map(h => {
+          const dead = h.rtt <= 0;
+          const label = h.n === 1 ? "WiFi link" : `hop ${h.n}`;
+          const cls = h.n === 1 ? "wifi" : (h.n === bottleneck ? "bottleneck" : "");
+          const loss = p.metrics[`hop_${String(h.n).padStart(2, "0")}_loss_pct`];
+          return `<div class="hop ${dead ? "dead" : ""}">
+            <span class="hn">${label}</span>
+            <span class="hbarwrap"><span class="hbar ${cls}" style="width:${dead ? 0 : (h.rtt / max * 100).toFixed(1)}%"></span></span>
+            <span class="hv">${dead ? "no reply" : h.rtt.toFixed(1) + " ms"}</span>
+            <span class="hn" style="width:3.2rem;text-align:left">${loss ? loss + "% loss" : ""}</span>
+          </div>`;
+        }).join("") + (bottleneck
+          ? `<div class="axis" style="margin-top:.4rem"><span>Biggest delay increase at hop ${bottleneck} (+${p.metrics.bottleneck_delta_ms} ms)</span></div>`
+          : "");
+      } else {
+        hopsEl.innerHTML = `<div class="axis"><span>no path data in this window (ICMP may be blocked here)</span></div>`;
+      }
+
+      const bloatEl = document.getElementById("bloat");
+      if (l) {
+        const [grade, cls, plain] = bloatGrade(l.metrics.bloat_ms);
+        bloatEl.innerHTML = `
+          <div class="bloat">
+            <div class="b"><span class="bl">Idle latency</span><span class="bv">${l.metrics.idle_rtt_ms} ms</span></div>
+            <div class="b"><span class="bl">While downloading</span><span class="bv">${l.metrics.loaded_rtt_ms} ms</span></div>
+            <div class="b"><span class="bl">Added by load</span><span class="bv ${cls}">+${l.metrics.bloat_ms} ms</span></div>
+            <div class="b"><span class="bl">Grade</span><span class="bv ${cls}">${grade}</span></div>
+          </div>
+          <div class="axis" style="margin-top:.35rem"><span>Measured at ${l.metrics.load_mbps} Mbps of load: ${plain}</span></div>`;
+      } else {
+        bloatEl.innerHTML = "";
+      }
+      wrap.style.display = "";
+    }
+
     // Cross-network table: same tasks, each site side by side.
     async function renderCompare() {
       const wrap = document.getElementById("compare");
@@ -337,6 +418,7 @@
       } else {
         live.textContent = "No measurements yet"; live.className = "live";
       }
+      renderPath();
       renderCompare();
      } catch (e) {
       document.getElementById("headline").textContent = "Dashboard unavailable";

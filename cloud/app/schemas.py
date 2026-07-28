@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-Workload = Literal["web", "video", "email", "download", "baseline", "path"]
+Workload = Literal["web", "video", "email", "download", "baseline", "path", "loadlat"]
 EndpointName = Literal["local", "cloud", "real"]
 
 

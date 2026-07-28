@@ -12,30 +12,44 @@ from datetime import datetime, timezone
 from .buffer import Buffer
 from .config import settings
 from .context import snapshot
-from .endpoints import targets_for
+from .endpoints import REF_PATHS, targets_for
 from .netid import net_hash
 from .uploader import flush
-from .workloads import baseline, download, email, path, video, web
+from .workloads import baseline, download, email, loadlat, path, video, web
 
-HEAVY = {"web": web, "video": video, "email": email, "download": download}
+# Every workload module, keyed by its contract name. Anything missing here
+# would silently fall back to another module, so keep it exhaustive.
+WORKLOADS = {
+    "web": web,
+    "video": video,
+    "email": email,
+    "download": download,
+    "baseline": baseline,
+    "path": path,
+    "loadlat": loadlat,
+}
+# The ones that run against all three endpoints each heavy cycle.
+HEAVY = ("web", "video", "email", "download")
 
 
 def _record(workload: str, endpoint: str, target: str, run_id: str) -> dict:
     """Run one workload against one target and shape it into a record."""
+    ctx = snapshot()
     base = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "probe_id": settings.probe_id,
-        "site": settings.site or None,
+        # Explicit label wins; otherwise self-label by the network we are on.
+        "site": settings.site or ctx.get("ssid") or None,
         "run_id": run_id,
         "workload": workload,
         "endpoint": endpoint,
         "target": target,
-        "context": snapshot(),
+        "context": ctx,
         "raw_ref": None,
         "net_hash": net_hash(),
     }
     try:
-        module = HEAVY[workload] if workload in HEAVY else baseline
+        module = WORKLOADS[workload]
         base["metrics"] = module.run(target)
         base["ok"], base["error"] = True, None
     except Exception as exc:  # a failed run is still a data point
@@ -63,4 +77,10 @@ def run_heavy(buffer: Buffer) -> None:
         rec["raw_ref"] = f"{settings.probe_id}/{run_id}-path.json"
         rec["_raw"] = path.last_raw.decode()
     buffer.add(rec)
+
+    # Latency under load: needs a target big enough to saturate the link.
+    load_target = settings.real_download or (
+        settings.cloud_base + REF_PATHS["download"]
+    )
+    buffer.add(_record("loadlat", "real", load_target, run_id))
     flush(buffer)

@@ -109,4 +109,29 @@ def test_email_timings_with_fake_imap(monkeypatch):
 
 def test_context_snapshot_never_raises():
     snap = context.snapshot()
-    assert set(snap) == {"wifi_channel", "rssi_dbm", "cpu_temp_c"}
+    assert set(snap) == {"wifi_channel", "rssi_dbm", "cpu_temp_c", "ssid", "bssid"}
+
+
+# --- path (per-hop decomposition) --------------------------------------------
+
+
+def test_path_hop_metrics_and_bottleneck():
+    """Hop 1 is the WiFi link; the biggest RTT jump names the bottleneck."""
+    hubs = [
+        {"count": 1, "host": "192.168.1.1", "Loss%": 0.0, "Avg": 2.4},
+        {"count": 2, "host": "???", "Loss%": 100.0, "Avg": 0.0},  # no reply
+        {"count": 3, "host": "isp.gw", "Loss%": 0.0, "Avg": 14.8},
+        {"count": 4, "host": "1.1.1.1", "Loss%": 0.0, "Avg": 16.1},
+    ]
+    m = path._hop_metrics(hubs)
+    assert m["hop_01_rtt_ms"] == 2.4
+    assert m["hop_02_loss_pct"] == 100.0
+    # hop 3 adds 12.4 ms, the largest single increase
+    assert m["bottleneck_hop"] == 3.0
+    assert m["bottleneck_delta_ms"] == 12.4
+
+
+def test_path_tcp_mode_in_command():
+    """TCP mode is what makes per-hop work where ICMP echo is blocked."""
+    cmd = path._cmd("1.1.1.1")
+    assert "--tcp" in cmd and cmd[-1] == "1.1.1.1"
