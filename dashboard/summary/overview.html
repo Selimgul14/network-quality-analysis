@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WiFi health</title>
+  <style>
+    /* Same palette as the detailed page, far less of it. */
+    :root { --ink:#1b2733; --mute:#65788a; --line:#dde4ea; --green:#1f9d57; --amber:#d98a00; --red:#d23b3b;
+            --green-bg:#e3f4ea; --amber-bg:#fbeed3; --red-bg:#fadddd; }
+    body { font-family: system-ui, sans-serif; margin:0; background:#eef2f6; color:var(--ink); }
+    main { max-width:560px; margin:2.2rem auto; padding:0 1rem; text-align:center; }
+    .panel { background:#fff; border:1px solid var(--line); border-radius:16px; padding:1.8rem 1.5rem 1.4rem; }
+    h1 { font-size:1.15rem; margin:0 0 1rem; }
+    .gauge { position:relative; width:230px; margin:0 auto; }
+    .gauge .num { position:absolute; inset:0; top:34%; font-size:3.1rem; font-weight:800; line-height:1; }
+    .gauge .lbl { position:absolute; inset:0; top:60%; font-size:.95rem; font-weight:700; text-transform:capitalize; }
+    .verdict { font-size:1rem; margin:.9rem auto .2rem; max-width:26rem; color:#42525f; }
+    .lights { display:flex; gap:.6rem; margin:1.3rem 0 .4rem; }
+    .light { flex:1; border:1px solid var(--line); border-radius:12px; padding:.7rem .4rem .6rem; }
+    .light .dot { width:14px; height:14px; border-radius:50%; margin:0 auto .35rem; background:#c6d2dc; }
+    .light.ok .dot { background:var(--green); } .light.suspect .dot { background:var(--amber); }
+    .light .n { font-size:.8rem; font-weight:700; }
+    .light .s { font-size:.7rem; color:var(--mute); text-transform:capitalize; }
+    .comps { margin-top:1.1rem; text-align:left; }
+    .comp { display:flex; align-items:center; gap:.6rem; margin:.3rem 0; font-size:.78rem; }
+    .comp .cn { width:7.2rem; color:var(--mute); text-align:right; }
+    .comp .cbw { flex:1; background:#f0f4f7; border-radius:4px; height:9px; }
+    .comp .cb { display:block; height:100%; border-radius:4px; background:var(--green); min-width:2px; }
+    .comp .cb.mid { background:var(--amber); } .comp .cb.low { background:var(--red); }
+    .comp .cv { width:2.4rem; text-align:right; font-weight:700; }
+    footer { margin:1.1rem 0; font-size:.82rem; color:var(--mute); display:flex; justify-content:space-between; }
+    footer a { color:var(--mute); }
+    .stale { color:var(--red); font-weight:700; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="panel">
+      <h1>How is the WiFi doing?</h1>
+      <div class="gauge">
+        <svg viewBox="0 0 100 58" width="230">
+          <path d="M10 52 A42 42 0 0 1 90 52" fill="none" stroke="#eef2f6" stroke-width="9" stroke-linecap="round"/>
+          <path id="arc" d="M10 52 A42 42 0 0 1 90 52" fill="none" stroke="#c6d2dc" stroke-width="9"
+                stroke-linecap="round" pathLength="100" stroke-dasharray="0 100"/>
+        </svg>
+        <div class="num" id="score">–</div>
+        <div class="lbl" id="label">loading…</div>
+      </div>
+      <p class="verdict" id="verdict"></p>
+      <div class="lights" id="lights"></div>
+      <div class="comps" id="comps"></div>
+    </div>
+    <footer>
+      <span id="updated">…</span>
+      <a href="/">Detailed view →</a>
+    </footer>
+  </main>
+
+  <script>
+    // Simple public view over /summary: one score, one sentence, three
+    // lights. Everything else lives on the detailed page.
+    const SEGS = {
+      wifi_link: "Your WiFi",
+      internet_path: "Internet path",
+      third_party: "The services you use",
+    };
+    const CAUSE = {
+      wifi_link: "The slow part looks like the WiFi link between your device and the router.",
+      internet_path: "Your WiFi is fine; the path from your router out to the internet is slow.",
+      third_party: "Your network is fine; a service out on the internet is responding slowly.",
+    };
+    const COMP_NAMES = { video:"Video streaming", web:"Web browsing", responsiveness:"Responsiveness",
+                         download:"Downloads", email:"Email" };
+
+    const clr = s => s == null ? "#c6d2dc"
+      : s >= 75 ? "var(--green)" : s >= 50 ? "var(--amber)" : "var(--red)";
+
+    async function render() {
+      let s;
+      try { s = await (await fetch("/summary?hours=24")).json(); }
+      catch { document.getElementById("label").textContent = "unreachable"; return; }
+      const h = s.health || {};
+
+      // gauge
+      const arc = document.getElementById("arc");
+      arc.setAttribute("stroke-dasharray", `${h.score ?? 0} 100`);
+      arc.setAttribute("stroke", clr(h.score));
+      document.getElementById("score").textContent = h.score != null ? Math.round(h.score) : "–";
+      document.getElementById("label").textContent = h.label === "no_data" ? "no data yet" : (h.label || "");
+
+      // one-line verdict
+      document.getElementById("verdict").textContent =
+        s.likely_cause ? CAUSE[s.likely_cause] : (s.headline || "");
+
+      // traffic light per segment
+      document.getElementById("lights").innerHTML = Object.entries(SEGS).map(([k, name]) => {
+        const st = (s.segments || {})[k] || "no_data";
+        return `<div class="light ${st}"><div class="dot"></div>
+          <div class="n">${name}</div><div class="s">${st === "no_data" ? "not measured" : st}</div></div>`;
+      }).join("");
+
+      // component mini-bars, heaviest weight first
+      const comps = Object.entries(h.components || {})
+        .filter(([, v]) => v != null)
+        .sort((a, b) => (h.weights[b[0]] || 0) - (h.weights[a[0]] || 0));
+      document.getElementById("comps").innerHTML = comps.map(([k, v]) => `
+        <div class="comp"><span class="cn">${COMP_NAMES[k] || k}</span>
+          <span class="cbw"><span class="cb ${v >= 75 ? "" : v >= 50 ? "mid" : "low"}" style="width:${v}%"></span></span>
+          <span class="cv">${Math.round(v)}</span></div>`).join("");
+
+      document.getElementById("updated").textContent =
+        "updated " + new Date().toLocaleTimeString([], { hour:"2-digit", minute:"2-digit" });
+    }
+
+    render();
+    setInterval(render, 60_000);  // keep it fresh on a wall-mounted tab
+  </script>
+</body>
+</html>

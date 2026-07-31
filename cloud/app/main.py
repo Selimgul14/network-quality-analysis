@@ -30,6 +30,8 @@ app = FastAPI(title="Remote WiFi Performance Tool API")
 
 # dashboard/summary/index.html, copied into the image next to cloud/
 SUMMARY_PAGE = Path(__file__).resolve().parents[2] / "dashboard" / "summary" / "index.html"
+# The simple public view: one score, one sentence, three lights.
+OVERVIEW_PAGE = SUMMARY_PAGE.parent / "overview.html"
 
 
 def require_token(authorization: str = Header(default="")) -> None:
@@ -148,6 +150,12 @@ def sites(db: Session = Depends(get_db)) -> list[dict]:
 @app.get("/", dependencies=[Depends(require_dash_auth)])
 def summary_page() -> FileResponse:
     return FileResponse(SUMMARY_PAGE, media_type="text/html")
+
+
+@app.get("/overview", dependencies=[Depends(require_dash_auth)])
+def overview_page() -> FileResponse:
+    """At-a-glance health for end users; the detailed view stays at /."""
+    return FileResponse(OVERVIEW_PAGE, media_type="text/html")
 
 
 @app.get("/measurements", dependencies=[Depends(require_dash_auth)])

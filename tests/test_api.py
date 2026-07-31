@@ -104,3 +104,23 @@ def test_dash_auth_when_password_set(client, monkeypatch):
     assert client.get("/summary", auth=("wifi", "wrong")).status_code == 401
     assert client.get("/summary", auth=("wifi", "s3cret")).status_code == 200
     assert client.get("/measurements", auth=("wifi", "s3cret")).status_code == 200
+
+
+def test_overview_page_served(client):
+    r = client.get("/overview")
+    assert r.status_code == 200
+    assert "How is the WiFi doing?" in r.text
+
+
+def test_ingest_accepts_string_identity_metrics(client):
+    """Hop identity labels (host/role) are strings inside metrics."""
+    rec = sample_record()
+    rec["workload"] = "path"
+    rec["metrics"] = {
+        "hops": 6.0, "hop_04_rtt_ms": 14.8,
+        "hop_04_host": "core.isp.net", "hop_04_role": "isp-core",
+        "hop_04_asn": 5089.0,
+    }
+    assert client.post("/ingest", json=rec, headers=AUTH).status_code == 201
+    rows = client.get("/measurements", params={"workload": "path"}).json()
+    assert rows[0]["metrics"]["hop_04_role"] == "isp-core"
