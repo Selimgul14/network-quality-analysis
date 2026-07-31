@@ -281,19 +281,37 @@
           .filter(Boolean).sort((a, b) => a.n - b.n);
         const bottleneck = p.metrics.bottleneck_hop;
         const max = Math.max(...hops.map(h => h.rtt), 1);
+        // Identity labels from the probe's rDNS/ASN lookup: name the hop's
+        // role rather than its number ("your ISP" instead of "hop 4").
+        const ROLE = { home:"home network", "isp-access":"your ISP", "isp-core":"ISP core",
+                      transit:"transit", destination:"destination", unknown:"" };
+        const hopId = n => {
+          const k = `hop_${String(n).padStart(2, "0")}`;
+          return { host: p.metrics[`${k}_host`], role: p.metrics[`${k}_role`], asn: p.metrics[`${k}_asn`] };
+        };
+        const hopName = n => {
+          if (n === 1) return "WiFi link";
+          const id = hopId(n);
+          return (id.role && ROLE[id.role]) || `hop ${n}`;
+        };
         hopsEl.innerHTML = hops.map(h => {
           const dead = h.rtt <= 0;
-          const label = h.n === 1 ? "WiFi link" : `hop ${h.n}`;
+          const id = hopId(h.n);
+          // full detail in the tooltip: hop number, rDNS name, AS number
+          const tip = [`hop ${h.n}`, id.host, id.asn ? `AS${id.asn}` : null]
+            .filter(Boolean).join(" · ");
           const cls = h.n === 1 ? "wifi" : (h.n === bottleneck ? "bottleneck" : "");
           const loss = p.metrics[`hop_${String(h.n).padStart(2, "0")}_loss_pct`];
-          return `<div class="hop ${dead ? "dead" : ""}">
-            <span class="hn">${label}</span>
+          return `<div class="hop ${dead ? "dead" : ""}" title="${tip}">
+            <span class="hn">${hopName(h.n)}</span>
             <span class="hbarwrap"><span class="hbar ${cls}" style="width:${dead ? 0 : (h.rtt / max * 100).toFixed(1)}%"></span></span>
             <span class="hv">${dead ? "no reply" : h.rtt.toFixed(1) + " ms"}</span>
             <span class="hn" style="width:3.2rem;text-align:left">${loss ? loss + "% loss" : ""}</span>
           </div>`;
         }).join("") + (bottleneck
-          ? `<div class="axis" style="margin-top:.4rem"><span>Biggest delay increase at hop ${bottleneck} (+${p.metrics.bottleneck_delta_ms} ms)</span></div>`
+          ? `<div class="axis" style="margin-top:.4rem"><span>Biggest delay increase at ${
+              hopName(bottleneck) === `hop ${bottleneck}` ? `hop ${bottleneck}` :
+              `${hopName(bottleneck)} (hop ${bottleneck})`} (+${p.metrics.bottleneck_delta_ms} ms)</span></div>`
           : "");
       } else {
         hopsEl.innerHTML = `<div class="axis"><span>no path data in this window (ICMP may be blocked here)</span></div>`;

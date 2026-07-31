@@ -18,7 +18,9 @@ blocks that too will only resolve the final hop.
 """
 from __future__ import annotations
 
+import ipaddress
 import json
+import re
 import subprocess
 
 from ..config import settings
@@ -30,7 +32,9 @@ MAX_HOPS = 20  # cap per-hop metrics so one record cannot balloon
 
 
 def _cmd(target: str) -> list[str]:
-    cmd = ["mtr", "--report", "--json", "-c", "3"]
+    # -z: per-hop ASN lookup (Team Cymru); -b: keep IPs next to rDNS
+    # names. Both feed the hop-identity labels.
+    cmd = ["mtr", "--report", "--json", "-c", "3", "-z", "-b"]
     if settings.mtr_tcp:
         # TCP SYN to a port that is virtually never filtered.
         cmd += ["--tcp", "-P", str(settings.mtr_port)]
@@ -91,7 +95,90 @@ def _hop_metrics(hubs: list[dict]) -> dict[str, float]:
     return out
 
 
-def run(target: str) -> dict[str, float]:
+def _hop_ip(hub: dict) -> str | None:
+    """Best-effort IP for a hub: the -b 'ip' field, or host if it is one."""
+    for key in ("ip", "host"):
+        v = hub.get(key)
+        if v:
+            try:
+                ipaddress.ip_address(str(v))
+                return str(v)
+            except ValueError:
+                continue
+    return None
+
+
+def _asn(hub: dict) -> int | None:
+    """Numeric ASN from mtr -z ('AS15169' -> 15169), None if unknown."""
+    m = re.match(r"AS(\d+)$", str(hub.get("ASN", "")))
+    return int(m.group(1)) if m else None
+
+
+def _identity(hubs: list[dict]) -> dict[str, float | str]:
+    """Name and role per hop, so the dashboard can say 'your ISP's edge
+    router' instead of 'hop 4'.
+
+    Roles come from the ASN sequence plus address type: private hops
+    before the first public one are the home network; the first public
+    ASN is the ISP (its first hop is the access, the rest its core);
+    the final hop's ASN is the destination provider; anything else
+    between is peering/transit. CGNAT (100.64/10) counts as ISP access.
+    """
+    out: dict[str, float | str] = {}
+
+    responsive = [
+        h for h in hubs
+        if 0 < int(h.get("count", 0) or 0) <= MAX_HOPS
+        and str(h.get("host", "???")) != "???"
+    ]
+    if not responsive:
+        return out
+
+    # The ISP is the first public ASN on the path; the destination is the
+    # last hop's ASN.
+    asns = [_asn(h) for h in responsive]
+    isp_asn = next((a for a in asns if a is not None), None)
+    dest_asn = asns[-1]
+
+    seen_isp = False
+    for hub, asn in zip(responsive, asns):
+        idx = int(hub["count"])
+        ip = _hop_ip(hub)
+        priv = False
+        cgnat = False
+        if ip:
+            addr = ipaddress.ip_address(ip)
+            priv = addr.is_private and not addr in ipaddress.ip_network("100.64.0.0/10")
+            cgnat = addr in ipaddress.ip_network("100.64.0.0/10")
+
+        if idx == 1 or (priv and not seen_isp):
+            role = "home"
+        elif cgnat:
+            role = "isp-access"
+        elif asn is not None and asn == isp_asn:
+            role = "isp-core" if seen_isp else "isp-access"
+            seen_isp = True
+        elif asn is not None and asn == dest_asn:
+            role = "destination"
+        elif asn is not None:
+            role = "transit"
+        else:
+            role = "unknown"
+
+        prefix = f"hop_{idx:02d}"
+        out[f"{prefix}_host"] = str(hub.get("host"))
+        out[f"{prefix}_role"] = role
+        if asn is not None:
+            out[f"{prefix}_asn"] = float(asn)
+
+    if isp_asn is not None:
+        out["isp_asn"] = float(isp_asn)
+    if dest_asn is not None:
+        out["dest_asn"] = float(dest_asn)
+    return out
+
+
+def run(target: str) -> dict[str, float | str]:
     global last_raw
     out = subprocess.run(
         _cmd(target), capture_output=True, text=True, timeout=60, check=True,
@@ -103,7 +190,7 @@ def run(target: str) -> dict[str, float]:
         raise RuntimeError("path workload: mtr returned no hops")
 
     dest = hubs[-1]  # final hop = destination
-    metrics: dict[str, float] = {
+    metrics: dict[str, float | str] = {
         "hops": float(len(hubs)),
         "dest_rtt_ms": float(dest.get("Avg", 0.0) or 0.0),
         "dest_loss_pct": float(dest.get("Loss%", 0.0) or 0.0),
@@ -116,4 +203,5 @@ def run(target: str) -> dict[str, float]:
         metrics["first_hop_rtt_ms"] = round(float(first["Avg"]), 2)
 
     metrics.update(_hop_metrics(hubs))
+    metrics.update(_identity(hubs))
     return metrics

@@ -137,6 +137,47 @@ def test_path_tcp_mode_in_command():
     assert "--tcp" in cmd and cmd[-1] == "1.1.1.1"
 
 
+# --- path (hop identity) -----------------------------------------------------
+
+
+def test_path_cmd_requests_asn_and_ips():
+    cmd = path._cmd("1.1.1.1")
+    assert "-z" in cmd and "-b" in cmd
+
+
+def test_path_hop_identity_roles():
+    """ASN sequence + address type name each hop's role."""
+    hubs = [
+        {"count": 1, "host": "router.lan", "ip": "192.168.1.1", "ASN": "AS???"},
+        {"count": 2, "host": "cgnat.isp.net", "ip": "100.64.0.1", "ASN": "AS???"},
+        {"count": 3, "host": "edge.isp.net", "ip": "81.1.1.1", "ASN": "AS5089"},
+        {"count": 4, "host": "core.isp.net", "ip": "81.1.2.1", "ASN": "AS5089"},
+        {"count": 5, "host": "peer.example.net", "ip": "4.68.0.1", "ASN": "AS3356"},
+        {"count": 6, "host": "one.one.one.one", "ip": "1.1.1.1", "ASN": "AS13335"},
+    ]
+    m = path._identity(hubs)
+    assert m["hop_01_role"] == "home"
+    assert m["hop_02_role"] == "isp-access"   # CGNAT belongs to the ISP
+    assert m["hop_03_role"] == "isp-access"   # first public ISP hop
+    assert m["hop_04_role"] == "isp-core"
+    assert m["hop_05_role"] == "transit"
+    assert m["hop_06_role"] == "destination"
+    assert m["hop_06_host"] == "one.one.one.one"
+    assert m["hop_03_asn"] == 5089.0
+    assert m["isp_asn"] == 5089.0
+    assert m["dest_asn"] == 13335.0
+
+
+def test_path_hop_identity_skips_unresponsive():
+    hubs = [
+        {"count": 1, "host": "router.lan", "ip": "192.168.1.1"},
+        {"count": 2, "host": "???"},  # no reply: no identity emitted
+    ]
+    m = path._identity(hubs)
+    assert m["hop_01_role"] == "home"
+    assert "hop_02_role" not in m and "hop_02_host" not in m
+
+
 # --- baseline (multi-destination) --------------------------------------------
 
 

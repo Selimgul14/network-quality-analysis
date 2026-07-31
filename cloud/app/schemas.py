@@ -31,7 +31,8 @@ class Measurement(BaseModel):
     target: str
     ok: bool
     error: str | None = None
-    metrics: dict[str, float] = {}
+    # numeric results, plus string identity labels (e.g. hop_NN_host/_role)
+    metrics: dict[str, float | str] = {}
     context: Context | None = None
     raw_ref: str | None = None
     net_hash: str | None = None
