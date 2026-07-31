@@ -109,3 +109,68 @@ def test_no_data():
     s = compute_summary([], hours=24)
     assert s["overall"] == "no_data"
     assert s["likely_cause"] is None
+    assert s["health"]["score"] is None
+    assert s["health"]["label"] == "no_data"
+
+
+# --- composite health score --------------------------------------------------
+
+
+def test_quality_mos_anchors():
+    """good threshold -> 75 (MOS 4), poor -> 25 (MOS 2), saturating."""
+    from cloud.app.summary import _quality
+
+    assert _quality(2000, 2000, 5000) == 75.0
+    assert _quality(5000, 2000, 5000) == 25.0
+    assert _quality(20000, 2000, 5000) == 0.0
+    assert _quality(0, 2000, 5000) == 100.0
+    # higher-is-better mirrors: good -> 75, 2x good -> 100
+    assert _quality(20, 20, 5, lower=False) == 75.0
+    assert _quality(40, 20, 5, lower=False) == 100.0
+    assert _quality(5, 20, 5, lower=False) == 25.0
+
+
+def test_health_score_healthy_network():
+    """A network good on every component scores in the good band."""
+    rows = _web_rows(300, 800, 1200) + [
+        _row("video", "real", startup_ms=300),
+        _row("email", "real", fetch_ms=550),
+        _row("download", "real", throughput_mbps=55),
+        _row("loadlat", "real", bloat_ms=15.0),
+        _row("baseline", "real", loss_pct=0.0),
+    ]
+    s = compute_summary(rows, hours=24)
+    h = s["health"]
+    assert h["score"] >= 75
+    assert h["label"] in ("good", "excellent")
+    assert h["components"]["responsiveness"] is not None
+
+
+def test_health_score_weights_missing_components():
+    """Missing components drop out; weights renormalise, no 0 counted."""
+    rows = _web_rows(300, 800, 1200)  # only web has data
+    s = compute_summary(rows, hours=24)
+    h = s["health"]
+    assert h["components"]["video"] is None
+    assert h["components"]["responsiveness"] is None
+    # score equals the web component alone, not dragged down by missing
+    assert h["score"] == h["components"]["web"]
+
+
+def test_health_score_bad_video_dominates():
+    """Video carries the largest weight (Dobrian: rebuffering dominates
+    engagement), so bad video pulls the composite hardest."""
+    good_video = compute_summary(
+        _web_rows(300, 800, 1200) + [_row("video", "real", startup_ms=300)], hours=24
+    )["health"]["score"]
+    bad_video = compute_summary(
+        _web_rows(300, 800, 1200) + [_row("video", "real", startup_ms=25000)], hours=24
+    )["health"]["score"]
+    assert bad_video < good_video
+    assert good_video - bad_video > 30  # video weight is heavy
+
+
+def test_health_score_bufferbloat_hurts():
+    rows = _web_rows(300, 800, 1200) + [_row("loadlat", "real", bloat_ms=250.0)]
+    s = compute_summary(rows, hours=24)
+    assert s["health"]["components"]["responsiveness"] == 0.0

@@ -48,6 +48,33 @@ SEGMENT_LABELS = {
 # Which endpoint's data tells us about each segment.
 SEGMENT_ENDPOINT = {"wifi_link": "local", "internet_path": "cloud", "third_party": "real"}
 
+# --- Composite health score --------------------------------------------------
+# One 0-100 figure over the workloads, weighted by how much each shapes
+# user experience. Every weight is tied to a source rather than invented:
+#   video 0.35          rebuffering has the largest impact on engagement of
+#                       any quality metric (Dobrian et al., SIGCOMM 2011),
+#                       and video is the majority of downstream traffic
+#                       (Sandvine Global Internet Phenomena 2024: 54%).
+#   responsiveness 0.25 latency under load + packet loss: what interactive
+#                       use (calls, gaming, typing) feels. Bufferbloat in
+#                       the home gateway dominates interactive latency
+#                       (Sundaresan et al., SIGCOMM 2011).
+#   web 0.25            waiting time drives web QoE (ITU-T G.1030).
+#   download 0.10       bulk transfer: elastic, tolerant (ITU-T G.1010
+#   email 0.05          "background" class; email tolerates minutes).
+HEALTH_WEIGHTS = {
+    "video": 0.35,
+    "responsiveness": 0.25,
+    "web": 0.25,
+    "download": 0.10,
+    "email": 0.05,
+}
+# Responsiveness inputs: added latency under load (the common bufferbloat
+# grading bands put A under ~30 ms) and baseline loss (interactive audio
+# degrades past ~1% and badly past ~5%, cf. ITU-T G.1010 / G.107).
+BLOAT_GOOD_MS, BLOAT_POOR_MS = 30.0, 100.0
+LOSS_GOOD_PCT, LOSS_POOR_PCT = 1.0, 5.0
+
 
 def _median_metric(rows: list[dict], workload: str, endpoint: str) -> float | None:
     metric = WORKLOAD_METRIC[workload][0]
@@ -85,6 +112,87 @@ def _first_hop_rtt(rows: list[dict]) -> float | None:
         and "first_hop_rtt_ms" in (r["metrics"] or {})
     ]
     return round(median(vals), 2) if vals else None
+
+
+def _interp(v: float, x0: float, x1: float, y0: float, y1: float) -> float:
+    return y0 + (v - x0) * (y1 - y0) / (x1 - x0)
+
+
+def _quality(value: float | None, good: float, poor: float, lower: bool = True) -> float | None:
+    """Map one metric to a 0-100 quality index anchored on the MOS scale
+    (ITU-T P.800 ACR, MOS m -> (m-1)*25): the good threshold sits at
+    MOS 4 (75), poor at MOS 2 (25), saturating at twice-good/twice-poor."""
+    if value is None:
+        return None
+    if lower:
+        if value <= 0:
+            return 100.0
+        if value <= good:
+            return round(_interp(value, 0, good, 100, 75), 1)
+        if value <= poor:
+            return round(_interp(value, good, poor, 75, 25), 1)
+        if value <= 2 * poor:
+            return round(_interp(value, poor, 2 * poor, 25, 0), 1)
+        return 0.0
+    if value >= 2 * good:
+        return 100.0
+    if value >= good:
+        return round(_interp(value, good, 2 * good, 75, 100), 1)
+    if value >= poor:
+        return round(_interp(value, poor, good, 25, 75), 1)
+    if value >= poor / 2:
+        return round(_interp(value, poor / 2, poor, 0, 25), 1)
+    return 0.0
+
+
+def _responsiveness(rows: list[dict]) -> float | None:
+    """Interactive feel: median added latency under load (loadlat) and
+    median baseline loss, each mapped to quality and averaged."""
+    bloat = [
+        r["metrics"]["bloat_ms"] for r in rows
+        if r["workload"] == "loadlat" and r["ok"] and "bloat_ms" in (r["metrics"] or {})
+    ]
+    loss = [
+        r["metrics"]["loss_pct"] for r in rows
+        if r["workload"] == "baseline" and r["ok"] and "loss_pct" in (r["metrics"] or {})
+    ]
+    parts = [
+        q for q in (
+            _quality(median(bloat), BLOAT_GOOD_MS, BLOAT_POOR_MS) if bloat else None,
+            _quality(median(loss), LOSS_GOOD_PCT, LOSS_POOR_PCT) if loss else None,
+        ) if q is not None
+    ]
+    return round(sum(parts) / len(parts), 1) if parts else None
+
+
+def _health(workloads: dict[str, Any], rows: list[dict]) -> dict[str, Any]:
+    """Weighted composite over the available components. Weights of
+    missing components are renormalised away rather than counted as 0."""
+    components: dict[str, float | None] = {
+        w: _quality(d["value"], d["good"], d["poor"], d["lower_is_better"])
+        for w, d in workloads.items()
+    }
+    components["responsiveness"] = _responsiveness(rows)
+    avail = {k: v for k, v in components.items() if v is not None}
+    if avail:
+        wsum = sum(HEALTH_WEIGHTS[k] for k in avail)
+        score = round(sum(HEALTH_WEIGHTS[k] * v for k, v in avail.items()) / wsum, 1)
+    else:
+        score = None
+    label = (
+        "no_data" if score is None
+        else "excellent" if score >= 90
+        else "good" if score >= 75   # MOS 4 anchor
+        else "fair" if score >= 50   # MOS 3
+        else "poor" if score >= 25   # MOS 2
+        else "bad"
+    )
+    return {
+        "score": score,
+        "label": label,
+        "components": components,
+        "weights": HEALTH_WEIGHTS,
+    }
 
 
 def _attribute(per_endpoint: dict[str, str]) -> str | None:
@@ -179,6 +287,9 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         "window_hours": hours,
         "overall": overall,
         "headline": headline_text,
+        # Composite 0-100 health over all components, weights documented
+        # at HEALTH_WEIGHTS (each tied to a cited source).
+        "health": _health(workloads, rows),
         "segments": segments,
         "likely_cause": likely,
         "workloads": workloads,
