@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from probe import context
-from probe.workloads import email, path, video
+from probe.workloads import baseline, email, path, video
 
 # --- helpers ---------------------------------------------------------------
 
@@ -135,3 +135,61 @@ def test_path_tcp_mode_in_command():
     """TCP mode is what makes per-hop work where ICMP echo is blocked."""
     cmd = path._cmd("1.1.1.1")
     assert "--tcp" in cmd and cmd[-1] == "1.1.1.1"
+
+
+# --- baseline (multi-destination) --------------------------------------------
+
+
+def test_baseline_tcp_ping_localhost():
+    """TCP-handshake probe against a local listener: 0% loss, sane RTT."""
+    import socket
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(16)  # backlog completes handshakes without accept()
+    port = srv.getsockname()[1]
+    try:
+        m = baseline._tcp_ping("127.0.0.1", port=port, count=3, gap=0.0)
+    finally:
+        srv.close()
+    assert m["loss_pct"] == 0.0
+    assert m["rtt_ms"] > 0
+    assert m["tcp_mode"] == 1
+
+
+def test_baseline_tcp_ping_counts_failures_as_loss():
+    """A closed port must read as loss, not as an exception."""
+    import socket
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()  # bound then closed: nothing listening
+    m = baseline._tcp_ping("127.0.0.1", port=port, count=2, gap=0.0)
+    assert m["loss_pct"] == 100.0
+
+
+def test_baseline_gateway_parse(monkeypatch):
+    """Gateway IP is parsed from `ip route show default` and cached."""
+    fake = subprocess.CompletedProcess(
+        args=[], returncode=0,
+        stdout="default via 192.168.1.1 dev wlan0 proto dhcp metric 600\n",
+    )
+    monkeypatch.setattr(baseline.subprocess, "run", lambda *a, **k: fake)
+    baseline._gw_cache = (0.0, None)  # reset the TTL cache
+    assert baseline.gateway_ip() == "192.168.1.1"
+
+
+def test_baseline_targets_classes(monkeypatch):
+    """One record per destination class, with the right endpoint/method."""
+    from probe import scheduler
+    from probe.config import settings
+
+    monkeypatch.setattr(baseline, "gateway_ip", lambda: "192.168.1.1")
+    monkeypatch.setattr(settings, "baseline_cdn", "cdn.example.com")
+    targets = scheduler._baseline_targets()
+    # gateway (icmp), cloud host (tcp), two anchors (icmp), CDN (icmp)
+    assert ("local", "192.168.1.1", "icmp") in targets
+    assert any(ep == "cloud" and method == "tcp" for ep, _, method in targets)
+    assert ("real", "cdn.example.com", "icmp") in targets
+    assert len(targets) == 3 + len(settings.dns_anchors)

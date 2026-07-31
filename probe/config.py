@@ -42,6 +42,12 @@ class ProbeSettings(BaseSettings):
     # Public anchors for baseline probes
     dns_anchors: list[str] = Field(default_factory=lambda: ["1.1.1.1", "8.8.8.8"])
 
+    # Extra baseline destination classes, so loss can be compared across
+    # them (gateway loss = WiFi link; one distant target = that path).
+    baseline_gateway: bool = True  # ping the default gateway (WiFi-link leg)
+    baseline_cloud: bool = True    # TCP-ping the cloud reference host
+    baseline_cdn: str = "www.google.com"  # large anycast CDN; empty disables
+
     # mtr in TCP mode gets per-hop data on networks that block ICMP echo.
     mtr_tcp: bool = True
     mtr_port: int = 443

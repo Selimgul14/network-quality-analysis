@@ -7,7 +7,9 @@ snapshot per heavy run.
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from .buffer import Buffer
 from .config import settings
@@ -35,9 +37,14 @@ HEAVY = ("web", "video", "email")
 TRANSFER = ("download",)
 
 
-def _record(workload: str, endpoint: str, target: str, run_id: str) -> dict:
-    """Run one workload against one target and shape it into a record."""
-    ctx = snapshot()
+def _record(
+    workload: str, endpoint: str, target: str, run_id: str,
+    ctx: dict | None = None, **kw,
+) -> dict:
+    """Run one workload against one target and shape it into a record.
+    Extra kwargs go to the workload's run(); `ctx` lets a caller share one
+    context snapshot across parallel runs."""
+    ctx = ctx if ctx is not None else snapshot()
     base = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "probe_id": settings.probe_id,
@@ -53,17 +60,45 @@ def _record(workload: str, endpoint: str, target: str, run_id: str) -> dict:
     }
     try:
         module = WORKLOADS[workload]
-        base["metrics"] = module.run(target)
+        base["metrics"] = module.run(target, **kw)
         base["ok"], base["error"] = True, None
     except Exception as exc:  # a failed run is still a data point
         base["metrics"], base["ok"], base["error"] = {}, False, str(exc)
     return base
 
 
+def _baseline_targets() -> list[tuple[str, str, str]]:
+    """(endpoint, target, method) per destination class. Comparing loss
+    across classes tells the WiFi link apart from one bad path: loss at
+    the gateway is the link, loss to a single distant target is not."""
+    out: list[tuple[str, str, str]] = []
+    if settings.baseline_gateway:
+        gw = baseline.gateway_ip()
+        if gw:
+            out.append(("local", gw, "icmp"))  # the router: WiFi-link leg
+    if settings.baseline_cloud:
+        host = urlparse(settings.cloud_base).hostname
+        if host:
+            out.append(("cloud", host, "tcp"))  # App Service drops ICMP
+    for anchor in settings.dns_anchors:
+        out.append(("real", anchor, "icmp"))
+    if settings.baseline_cdn:
+        out.append(("real", settings.baseline_cdn, "icmp"))
+    return out
+
+
 def run_baseline(buffer: Buffer) -> None:
     run_id = uuid.uuid4().hex
-    for anchor in settings.dns_anchors:
-        buffer.add(_record("baseline", "real", anchor, run_id))
+    targets = _baseline_targets()
+    ctx = snapshot()  # one snapshot shared by the parallel runs
+    # In parallel: five sequential ping rounds would overrun the 10 s cadence.
+    with ThreadPoolExecutor(max_workers=len(targets) or 1) as pool:
+        recs = pool.map(
+            lambda t: _record("baseline", t[0], t[1], run_id, ctx=ctx, method=t[2]),
+            targets,
+        )
+    for rec in recs:
+        buffer.add(rec)
     flush(buffer)
 
 
