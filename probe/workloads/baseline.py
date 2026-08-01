@@ -12,6 +12,8 @@ import statistics
 import subprocess
 import time
 
+from ..config import settings
+
 
 def _dns_ms(host: str) -> float:
     start = time.perf_counter()
@@ -19,14 +21,25 @@ def _dns_ms(host: str) -> float:
     return round((time.perf_counter() - start) * 1000, 2)
 
 
-def _ping(host: str, count: int = 5) -> dict[str, float]:
+def _ping(host: str, count: int | None = None) -> dict[str, float]:
     # Parse `ping` for avg RTT and loss. Jitter approximated as mdev.
-    # -w must exceed count seconds: packets go out at 1/s, so the last
-    # reply arrives at ~(count-1)s + RTT. A tight deadline clips that reply
-    # and reports it as loss, which showed up as a constant, suspiciously
-    # exact 20% (1 of 5). -W bounds each individual reply instead.
+    #
+    # -W bounds each individual reply. The overall deadline (-w) must sit
+    # well past the last expected reply: at the default 1 packet/s the
+    # last one arrives at ~(count-1)s + RTT, and a tight deadline clipped
+    # it, which is what produced the constant, suspiciously exact 20%
+    # (1 of 5) reported before 29 July.
+    #
+    # Loss per run is quantised by the packet count (5 packets -> steps of
+    # 20%), so a single lost packet reads as a 20% spike. -i 0.2 sends
+    # more packets in less wall time, giving finer resolution while
+    # staying inside the 10 s baseline cadence.
+    count = count or settings.ping_count
+    interval = settings.ping_interval_s
+    deadline = max(4, int(count * interval) + 4)
     out = subprocess.run(
-        ["ping", "-c", str(count), "-W", "2", "-w", str(count * 2), host],
+        ["ping", "-c", str(count), "-i", str(interval),
+         "-W", "2", "-w", str(deadline), host],
         capture_output=True, text=True,
     ).stdout
     rtt_ms = jitter_ms = loss_pct = 0.0
@@ -40,9 +53,12 @@ def _ping(host: str, count: int = 5) -> dict[str, float]:
     return {"rtt_ms": rtt_ms, "jitter_ms": jitter_ms, "loss_pct": loss_pct}
 
 
-def _tcp_ping(host: str, port: int = 443, count: int = 5, gap: float = 0.3) -> dict[str, float]:
+def _tcp_ping(host: str, port: int = 443, count: int | None = None,
+              gap: float | None = None) -> dict[str, float]:
     """TCP-handshake RTT for hosts that do not answer ICMP echo (e.g.
     Azure App Service). Same output shape as `_ping`, plus a marker."""
+    count = count or settings.ping_count
+    gap = settings.ping_interval_s if gap is None else gap
     # Resolve once so DNS time is not folded into the RTT samples.
     ip = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)[0][4][0]
     rtts: list[float] = []

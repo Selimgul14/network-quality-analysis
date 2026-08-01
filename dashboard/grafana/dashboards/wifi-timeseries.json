@@ -119,7 +119,8 @@
           "rawQuery": true,
           "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'rebuffer_ms')::float AS value FROM measurement WHERE workload='video' AND ok AND metrics->>'rebuffer_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
         }
-      ]
+      ],
+      "description": "Stays flat at zero while delivery exceeds the media bitrate. The headroom panel is the continuous form of the same question; this one fires under fault injection."
     },
     {
       "id": 4,
@@ -196,7 +197,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Baseline RTT (anchors)",
+      "title": "Baseline RTT (median + p95 per interval)",
       "datasource": {
         "type": "postgres",
         "uid": "wifi-timescale"
@@ -211,7 +212,9 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true
+            "spanNulls": true,
+            "lineWidth": 1,
+            "showPoints": "never"
           }
         },
         "overrides": []
@@ -225,14 +228,24 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS \"time\", target AS metric, (metrics->>'rtt_ms')::float AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'rtt_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+          "rawSql": "SELECT $__timeGroupAlias(ts, $__interval), target || ' p50' AS metric, percentile_cont(0.5) WITHIN GROUP (ORDER BY (metrics->>'rtt_ms')::float) AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'rtt_ms' IS NOT NULL AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(ts, $__interval), target || ' p95' AS metric, percentile_cont(0.95) WITHIN GROUP (ORDER BY (metrics->>'rtt_ms')::float) AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'rtt_ms' IS NOT NULL AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
         }
       ]
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Baseline packet loss",
+      "title": "Baseline packet loss (mean per interval)",
       "datasource": {
         "type": "postgres",
         "uid": "wifi-timescale"
@@ -247,8 +260,13 @@
         "defaults": {
           "unit": "percent",
           "custom": {
-            "spanNulls": true
-          }
+            "spanNulls": true,
+            "fillOpacity": 15,
+            "lineWidth": 1,
+            "showPoints": "never"
+          },
+          "min": 0,
+          "decimals": 2
         },
         "overrides": []
       },
@@ -261,9 +279,10 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT ts AS \"time\", target AS metric, (metrics->>'loss_pct')::float AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'loss_pct' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+          "rawSql": "SELECT $__timeGroupAlias(ts, $__interval), target AS metric, avg((metrics->>'loss_pct')::float) AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'loss_pct' IS NOT NULL AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
         }
-      ]
+      ],
+      "description": "Per-run loss_pct is quantised by the packet count (one lost packet of five reads as 20%). Averaging over the interval recovers the real loss rate."
     },
     {
       "id": 8,
@@ -298,6 +317,47 @@
           "format": "time_series",
           "rawQuery": true,
           "rawSql": "SELECT ts AS \"time\", target AS metric, (metrics->>'dest_rtt_ms')::float AS value FROM measurement WHERE workload='path' AND ok AND metrics->>'dest_rtt_ms' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Video delivery headroom (x real time)",
+      "description": "Delivery rate divided by media bitrate. 1.0 means playback is on the edge of stalling; higher is more margin before a rebuffer.",
+      "datasource": {
+        "type": "postgres",
+        "uid": "wifi-timescale"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "decimals": 1,
+          "custom": {
+            "spanNulls": true,
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "wifi-timescale"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT ts AS \"time\", endpoint AS metric, (metrics->>'headroom_x')::float AS value FROM measurement WHERE workload='video' AND ok AND metrics->>'headroom_x' IS NOT NULL AND $__timeFilter(ts) ORDER BY 1"
         }
       ]
     }

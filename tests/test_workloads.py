@@ -137,6 +137,14 @@ def test_path_tcp_mode_in_command():
     assert "--tcp" in cmd and cmd[-1] == "1.1.1.1"
 
 
+def test_video_headroom_and_tier(tmp_path: Path):
+    """Rebuffering stays 0 on a fast link, so headroom carries the signal."""
+    assert video._tier(60.0) == "4K"
+    assert video._tier(9.0) == "1080p"
+    assert video._tier(5.5) == "720p"
+    assert video._tier(1.0) == "below-480p"
+
+
 # --- path (hop identity) -----------------------------------------------------
 
 

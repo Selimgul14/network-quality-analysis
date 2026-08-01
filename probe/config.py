@@ -48,6 +48,12 @@ class ProbeSettings(BaseSettings):
     baseline_cloud: bool = True    # TCP-ping the cloud reference host
     baseline_cdn: str = "www.google.com"  # large anycast CDN; empty disables
 
+    # Packets per baseline probe. Loss per run is quantised by this count
+    # (5 packets -> 20% steps), so more packets give finer resolution; the
+    # sub-second interval keeps a run well inside the 10 s cadence.
+    ping_count: int = 10
+    ping_interval_s: float = 0.2
+
     # mtr in TCP mode gets per-hop data on networks that block ICMP echo.
     mtr_tcp: bool = True
     mtr_port: int = 443
