@@ -44,6 +44,49 @@ PROBE_INGEST_TOKEN=<the same token>
 PROBE_CLOUD_BASE=https://comp702-ref.azurewebsites.net
 ```
 
+## 3b. Redeploy after a code change
+
+The stack is already provisioned, so shipping a change means rebuilding
+the affected image and making App Service pull it again. Bicep is only
+needed when infrastructure changes.
+
+Which image holds what:
+
+| Changed | Image | Rebuild |
+|---|---|---|
+| `cloud/`, `dashboard/summary/`, `contracts/` | `wifi-api` | yes |
+| `dashboard/grafana/` | `wifi-grafana` | yes |
+| `reference/content/`, `reference/Dockerfile` | `wifi-ref` | yes |
+| `probe/` | none | Pi pulls from git |
+
+```
+# build + push (add --platform linux/amd64 on Apple Silicon)
+docker build -t <user>/wifi-api:latest -f cloud/Dockerfile .
+docker push <user>/wifi-api:latest
+
+# App Service caches the image, so force a fresh pull, then restart
+az webapp config container set -g comp702-rg -n comp702-api \
+  --docker-custom-image-name docker.io/<user>/wifi-api:latest
+az webapp restart -g comp702-rg -n comp702-api
+```
+
+Same three commands for `comp702-grafana` / `wifi-grafana` and
+`comp702-ref` / `wifi-ref`. Give App Service a minute, then check:
+
+```
+curl -s https://comp702-api.azurewebsites.net/health
+curl -s -u wifi:<dash-pw> https://comp702-api.azurewebsites.net/summary | head -c 300
+```
+
+**Ordering rule:** deploy the backend before the probe pulls a change
+that alters the record shape. The ingest endpoint validates against the
+contract, so a probe running ahead of its backend gets 422s and the
+records are lost (the buffer retries, but only for as long as it holds).
+
+Grafana on Azure is stateless: the provisioned JSON in git is the source
+of truth, so a redeploy replaces the panels wholesale. Export any UI
+edits back into `dashboard/grafana/dashboards/` first or they are gone.
+
 ## 4. Tear down
 
 ```
