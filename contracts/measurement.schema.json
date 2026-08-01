@@ -4,7 +4,16 @@
   "title": "Measurement",
   "description": "One measurement record produced by the probe. Shared contract for probe, backend and dashboard. One row per (workload, endpoint) run.",
   "type": "object",
-  "required": ["ts", "probe_id", "run_id", "workload", "endpoint", "target", "ok", "metrics"],
+  "required": [
+    "ts",
+    "probe_id",
+    "run_id",
+    "workload",
+    "endpoint",
+    "target",
+    "ok",
+    "metrics"
+  ],
   "additionalProperties": false,
   "properties": {
     "ts": {
@@ -17,7 +26,10 @@
       "description": "Stable probe identifier, e.g. 'pi-maple-01'."
     },
     "site": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Human deployment label, e.g. 'liverpool-eduroam-library'. Set via PROBE_SITE; groups results by network/location. Null when unset."
     },
     "run_id": {
@@ -26,11 +38,23 @@
     },
     "workload": {
       "type": "string",
-      "enum": ["web", "video", "email", "download", "baseline", "path", "loadlat"]
+      "enum": [
+        "web",
+        "video",
+        "email",
+        "download",
+        "baseline",
+        "path",
+        "loadlat"
+      ]
     },
     "endpoint": {
       "type": "string",
-      "enum": ["local", "cloud", "real"],
+      "enum": [
+        "local",
+        "cloud",
+        "real"
+      ],
       "description": "Which endpoint family this run hit."
     },
     "target": {
@@ -42,32 +66,73 @@
       "description": "True if the run completed and produced valid metrics."
     },
     "error": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Error detail when ok is false."
     },
     "metrics": {
       "type": "object",
-      "description": "Numeric results. Expected keys per workload (all optional so the schema stays stable): web -> dns_ms, connect_ms, ttfb_ms, load_ms; video -> startup_ms, rebuffer_count, rebuffer_ms, stream_mbps, bitrate_mbps, headroom_x (delivery rate / media bitrate; 1.0 means playback is on the edge of stalling), quality_tier (4K | 1080p | 720p | 480p | below-480p); email -> fetch_ms; download -> throughput_mbps, bytes; baseline -> dns_ms, rtt_ms, jitter_ms, loss_pct, tcp_mode (1 when RTT/loss came from TCP handshakes because the target drops ICMP); path -> hops, dest_rtt_ms, dest_loss_pct, worst_rtt_ms, first_hop_rtt_ms (WiFi-link latency), bottleneck_hop, bottleneck_delta_ms, isp_asn, dest_asn, and per hop hop_NN_rtt_ms / hop_NN_loss_pct plus identity labels hop_NN_host (rDNS), hop_NN_asn, hop_NN_role (home | isp-access | isp-core | transit | destination | unknown); loadlat -> idle_rtt_ms, loaded_rtt_ms, bloat_ms, loaded_rtt_max_ms, load_mbps.",
-      "additionalProperties": { "type": ["number", "string"] }
+      "description": "Numeric results. Expected keys per workload (all optional so the schema stays stable): web -> dns_ms, connect_ms, ttfb_ms, load_ms; video -> startup_ms, rebuffer_count, rebuffer_ms, stream_mbps, bitrate_mbps, headroom_x (delivery rate / media bitrate; 1.0 means playback is on the edge of stalling), quality_tier (4K | 1080p | 720p | 480p | below-480p); email -> fetch_ms; download -> throughput_mbps, bytes; baseline -> dns_ms, rtt_ms, jitter_ms, loss_pct, tcp_mode (1 when RTT/loss came from TCP handshakes because the target drops ICMP); path -> hops, dest_rtt_ms, dest_loss_pct, worst_rtt_ms, first_hop_rtt_ms (WiFi-link latency), bottleneck_hop, bottleneck_delta_ms, isp_asn, dest_asn, and per hop hop_NN_rtt_ms / hop_NN_loss_pct plus identity labels hop_NN_host (rDNS), hop_NN_asn, hop_NN_org (operator name), hop_NN_role (home | isp-access | isp-core | transit | destination | unknown); loadlat -> idle_rtt_ms, loaded_rtt_ms, bloat_ms, loaded_rtt_max_ms, load_mbps.",
+      "additionalProperties": {
+        "type": [
+          "number",
+          "string"
+        ]
+      }
     },
     "context": {
       "type": "object",
       "description": "Environment captured with every record so changes show up in the data.",
       "additionalProperties": false,
       "properties": {
-        "wifi_channel": { "type": ["integer", "null"] },
-        "rssi_dbm": { "type": ["number", "null"] },
-        "cpu_temp_c": { "type": ["number", "null"] },
-        "ssid": { "type": ["string", "null"], "description": "Network name of the WiFi under test." },
-        "bssid": { "type": ["string", "null"], "description": "MAC of the associated AP; distinguishes same-SSID networks (e.g. eduroam) across locations." }
+        "wifi_channel": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "rssi_dbm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cpu_temp_c": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "ssid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Network name of the WiFi under test."
+        },
+        "bssid": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "MAC of the associated AP; distinguishes same-SSID networks (e.g. eduroam) across locations."
+        }
       }
     },
     "raw_ref": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Blob Storage key for a large raw payload (e.g. full traceroute JSON). Null when there is none."
     },
     "net_hash": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Truncated + hashed public IP (ethics: site is not identifiable from stored data)."
     }
   }

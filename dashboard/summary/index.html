@@ -70,7 +70,8 @@
     table.cmp th { color:var(--mute); font-weight:400; font-size:.78rem; }
     table.cmp td.v { font-weight:700; }
     .hop { display:flex; align-items:center; gap:.55rem; margin:.28rem 0; font-size:.82rem; }
-    .hop .hn { width:5.5rem; color:var(--mute); font-size:.72rem; text-align:right; }
+    .hop .hn { width:8.5rem; color:var(--mute); font-size:.72rem; text-align:right;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .hop .hbarwrap { flex:1; background:#f0f4f7; border-radius:4px; height:15px; }
     /* display:block matters: a bare inline span ignores a % width */
     .hop .hbar { display:block; height:100%; border-radius:4px; background:var(--c-cloud); min-width:2px; }
@@ -288,11 +289,29 @@
                       transit:"transit", destination:"destination", unknown:"" };
         const hopId = n => {
           const k = `hop_${String(n).padStart(2, "0")}`;
-          return { host: p.metrics[`${k}_host`], role: p.metrics[`${k}_role`], asn: p.metrics[`${k}_asn`] };
+          return { host: p.metrics[`${k}_host`], role: p.metrics[`${k}_role`],
+                   asn: p.metrics[`${k}_asn`], org: p.metrics[`${k}_org`] };
+        };
+        // Prefer the operator's name ("Sky UK"), fall back to the role, then
+        // to the bare hop number when the path could not be identified.
+        // Registry holders read "HANDLE-AS Trading Name Ltd", so drop the
+        // handle and the corporate suffix; keep the raw string if that
+        // would leave nothing.
+        const tidyOrg = o => {
+          const s = String(o)
+            .replace(/^[A-Z0-9][A-Z0-9-]*\s+/, "")
+            .replace(/^[-–]\s*/, "")
+            .replace(/\s*\b(Limited|Ltd\.?|PLC|Inc\.?|LLC|S\.?A\.?|B\.?V\.?|GmbH|Parent|Corporation|Corp\.?)\b\s*$/i, "")
+            .trim();
+          return s || String(o);
         };
         const hopName = n => {
           if (n === 1) return "WiFi link";
           const id = hopId(n);
+          if (id.org) {
+            const name = tidyOrg(id.org);
+            return id.role === "isp-access" || id.role === "isp-core" ? `${name} (your ISP)` : name;
+          }
           return (id.role && ROLE[id.role]) || `hop ${n}`;
         };
         hopsEl.innerHTML = hops.map(h => {

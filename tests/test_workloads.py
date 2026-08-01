@@ -176,6 +176,35 @@ def test_path_hop_identity_roles():
     assert m["dest_asn"] == 13335.0
 
 
+def test_path_org_name_lookup_and_cache(monkeypatch):
+    """ASN resolves to an operator name, looked up once and cached."""
+    calls = []
+
+    class FakeResp:
+        def raise_for_status(self): pass
+        def json(self): return {"data": {"holder": "SKY-UK-LIMITED, GB"}}
+
+    def fake_get(url, **kw):
+        calls.append(kw.get("params"))
+        return FakeResp()
+
+    monkeypatch.setattr(path.httpx, "get", fake_get)
+    path._ORG_CACHE.clear()
+    assert path._org_name(5607) == "SKY-UK-LIMITED"
+    assert path._org_name(5607) == "SKY-UK-LIMITED"
+    assert len(calls) == 1  # second call served from cache
+
+
+def test_path_org_name_failure_is_quiet(monkeypatch):
+    """A dead lookup costs a label, never a failed measurement."""
+    def boom(*a, **kw):
+        raise RuntimeError("no network")
+
+    monkeypatch.setattr(path.httpx, "get", boom)
+    path._ORG_CACHE.clear()
+    assert path._org_name(64512) is None
+
+
 def test_path_hop_identity_skips_unresponsive():
     hubs = [
         {"count": 1, "host": "router.lan", "ip": "192.168.1.1"},

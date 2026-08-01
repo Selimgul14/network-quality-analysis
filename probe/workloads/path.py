@@ -23,6 +23,8 @@ import json
 import re
 import subprocess
 
+import httpx
+
 from ..config import settings
 
 # Full JSON of the most recent run, for the raw payload path.
@@ -114,6 +116,34 @@ def _asn(hub: dict) -> int | None:
     return int(m.group(1)) if m else None
 
 
+# ASN -> operator name, e.g. 5607 -> "SKY-UK-LIMITED". An AS number tells a
+# reader nothing; the operator's name is what makes a hop meaningful ("your
+# ISP" becomes "Sky"). Looked up once per ASN and cached for the life of the
+# process: a path crosses a handful of networks and they rarely change.
+_ORG_CACHE: dict[int, str] = {}
+ORG_LOOKUP_URL = "https://stat.ripe.net/data/as-overview/data.json"
+
+
+def _org_name(asn: int) -> str | None:
+    """Operator name for an ASN, or None if it cannot be resolved.
+
+    Runs after mtr has finished so it cannot perturb the measurement, and
+    fails quietly: a missing name only costs a nicer label.
+    """
+    if asn in _ORG_CACHE:
+        return _ORG_CACHE[asn] or None
+    name = ""
+    try:
+        r = httpx.get(ORG_LOOKUP_URL, params={"resource": f"AS{asn}"}, timeout=3.0)
+        r.raise_for_status()
+        holder = r.json()["data"]["holder"]  # e.g. "SKY-UK-LIMITED, GB"
+        name = str(holder).split(",")[0].strip()
+    except Exception:
+        pass  # cached as "" so a dead lookup is not retried every run
+    _ORG_CACHE[asn] = name
+    return name or None
+
+
 def _identity(hubs: list[dict]) -> dict[str, float | str]:
     """Name and role per hop, so the dashboard can say 'your ISP's edge
     router' instead of 'hop 4'.
@@ -170,9 +200,14 @@ def _identity(hubs: list[dict]) -> dict[str, float | str]:
         out[f"{prefix}_role"] = role
         if asn is not None:
             out[f"{prefix}_asn"] = float(asn)
+            org = _org_name(asn)
+            if org:
+                out[f"{prefix}_org"] = org
 
     if isp_asn is not None:
         out["isp_asn"] = float(isp_asn)
+        if _org_name(isp_asn):
+            out["isp_org"] = _org_name(isp_asn)  # cached, no second lookup
     if dest_asn is not None:
         out["dest_asn"] = float(dest_asn)
     return out
