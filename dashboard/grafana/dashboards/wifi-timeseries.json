@@ -240,7 +240,9 @@
           "rawQuery": true,
           "rawSql": "SELECT $__timeGroupAlias(ts, $__interval), target || ' p95' AS metric, percentile_cont(0.95) WITHIN GROUP (ORDER BY (metrics->>'rtt_ms')::float) AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'rtt_ms' IS NOT NULL AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
         }
-      ]
+      ],
+      "interval": "10m",
+      "description": " Minimum interval 10m: smaller buckets hold too few runs to average the per-run quantisation away."
     },
     {
       "id": 7,
@@ -282,7 +284,8 @@
           "rawSql": "SELECT $__timeGroupAlias(ts, $__interval), target AS metric, avg((metrics->>'loss_pct')::float) AS value FROM measurement WHERE workload='baseline' AND ok AND metrics->>'loss_pct' IS NOT NULL AND $__timeFilter(ts) GROUP BY 1, 2 ORDER BY 1"
         }
       ],
-      "description": "Per-run loss_pct is quantised by the packet count (one lost packet of five reads as 20%). Averaging over the interval recovers the real loss rate."
+      "description": "Per-run loss_pct is quantised by the packet count (one lost packet of five reads as 20%). Averaging over the interval recovers the real loss rate. Minimum interval 15m: smaller buckets hold too few runs to average the per-run quantisation away.",
+      "interval": "15m"
     },
     {
       "id": 8,
