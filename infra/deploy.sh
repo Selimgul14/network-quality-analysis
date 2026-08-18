@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# NOTE: always brace variables before a colon (${t}:latest). In zsh, "$t:l"
+# is the lowercase modifier, so "wifi-$t:latest" silently becomes
+# "wifi-apiatest" and App Service then fails to pull a nonexistent image.
 # Rebuild and redeploy the cloud images onto the already-provisioned stack.
 #
 #   ./infra/deploy.sh api            # just the backend + dashboard pages
@@ -42,10 +45,10 @@ for t in "$@"; do [[ $t == all ]] && targets+=(api grafana ref) || targets+=("$t
 for t in "${targets[@]}"; do
   echo "==> building wifi-$t"
   build_one "$t"
-  docker push "$DH/wifi-$t:latest"
+  docker push "${DH}/wifi-${t}:latest"
   # App Service caches the image, so re-set the tag to force a fresh pull
   az webapp config container set -g "$RG" -n "comp702-$t" \
-    --docker-custom-image-name "docker.io/$DH/wifi-$t:latest" >/dev/null
+    --docker-custom-image-name "docker.io/${DH}/wifi-${t}:latest" >/dev/null
   az webapp restart -g "$RG" -n "comp702-$t"
   echo "==> comp702-$t restarting"
 done

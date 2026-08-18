@@ -82,6 +82,14 @@ curl -s https://comp702-api.azurewebsites.net/health
 curl -s -u wifi:<dash-pw> https://comp702-api.azurewebsites.net/summary | head -c 300
 ```
 
+**zsh gotcha:** always quote or brace the image name.
+`--docker-custom-image-name docker.io/$DH/wifi-$app:latest` in zsh parses
+`$app:l` as the lowercase modifier and produces `wifi-apiatest`, which
+App Service accepts and then fails to pull ("image was not found"). Use
+`"docker.io/$DH/wifi-${app}:latest"`. Recover with a corrected
+`container set` plus `az webapp restart`; no rebuild is needed because
+the pushed images were tagged correctly.
+
 **Ordering rule:** deploy the backend before the probe pulls a change
 that alters the record shape. The ingest endpoint validates against the
 contract, so a probe running ahead of its backend gets 422s and the
@@ -112,7 +120,7 @@ Live in `comp702-rg`, all resources in `norwayeast`: the student
 subscription's region policy only allows norwayeast, francecentral,
 germanywestcentral, switzerlandnorth and italynorth, and App Service
 capacity (France) / Postgres offer restrictions (Germany) ruled others
-out. Hostnames: `comp702-api.azurewebsites.net` (summary page at `/`,
+out. Docker Hub namespace `selimgul14`. Hostnames: `comp702-api.azurewebsites.net` (summary page at `/`,
 HTTP Basic, user `wifi`), `comp702-ref.azurewebsites.net`,
 `comp702-grafana.azurewebsites.net` (Grafana login, user `wifi`),
 `comp702-pg.postgres.database.azure.com`.
