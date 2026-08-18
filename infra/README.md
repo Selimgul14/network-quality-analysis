@@ -82,6 +82,19 @@ curl -s https://comp702-api.azurewebsites.net/health
 curl -s -u wifi:<dash-pw> https://comp702-api.azurewebsites.net/summary | head -c 300
 ```
 
+**Architecture gotcha:** a build on Apple Silicon produces an arm64
+image, which App Service pulls and then fails to start with "Pull image
+... failed with unexpected exception". The name is fine in that case, the
+platform is not. Always `--platform linux/amd64` (deploy.sh does), and
+verify before restarting:
+
+```
+docker manifest inspect <user>/wifi-api:latest | grep architecture   # want amd64
+```
+
+Nothing on Azure needs changing to recover: rebuild with the flag, push,
+and `az webapp restart`.
+
 **zsh gotcha:** always quote or brace the image name.
 `--docker-custom-image-name docker.io/$DH/wifi-$app:latest` in zsh parses
 `$app:l` as the lowercase modifier and produces `wifi-apiatest`, which

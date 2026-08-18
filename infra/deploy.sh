@@ -46,6 +46,16 @@ for t in "${targets[@]}"; do
   echo "==> building wifi-$t"
   build_one "$t"
   docker push "${DH}/wifi-${t}:latest"
+  # App Service is amd64: an arm64 image pulls fine then dies on start,
+  # so refuse to deploy one rather than leave the site erroring.
+  arch=$(docker manifest inspect "${DH}/wifi-${t}:latest" 2>/dev/null \
+         | grep -o '"architecture": *"[^"]*"' | grep -v unknown | head -1)
+  case "$arch" in
+    *amd64*) : ;;
+    "")      echo "warning: could not read the manifest architecture" ;;
+    *)       echo "ERROR: ${DH}/wifi-${t}:latest is $arch, App Service needs amd64."
+             echo "       rebuild with --platform linux/amd64"; exit 1 ;;
+  esac
   # App Service caches the image, so re-set the tag to force a fresh pull
   az webapp config container set -g "$RG" -n "comp702-$t" \
     --docker-custom-image-name "docker.io/${DH}/wifi-${t}:latest" >/dev/null
