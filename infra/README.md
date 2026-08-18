@@ -59,6 +59,10 @@ Which image holds what:
 | `reference/content/`, `reference/Dockerfile` | `wifi-ref` | yes |
 | `probe/` | none | Pi pulls from git |
 
+One command per image: `./infra/deploy.sh api grafana` (or `all`). It
+detects the Docker Hub namespace from what is deployed, builds, pushes,
+forces the pull and restarts. The equivalent by hand:
+
 ```
 # build + push (add --platform linux/amd64 on Apple Silicon)
 docker build -t <user>/wifi-api:latest -f cloud/Dockerfile .
