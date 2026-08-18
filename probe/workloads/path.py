@@ -185,6 +185,11 @@ def _identity(hubs: list[dict]) -> dict[str, float | str]:
             role = "home"
         elif cgnat:
             role = "isp-access"
+        elif priv:
+            # RFC1918 inside the path, past the first public hop: a carrier
+            # numbering its own backbone privately, not the home network.
+            role = "isp-core"
+            seen_isp = True
         elif asn is not None and asn == isp_asn:
             role = "isp-core" if seen_isp else "isp-access"
             seen_isp = True

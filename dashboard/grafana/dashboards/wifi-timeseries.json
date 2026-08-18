@@ -31,7 +31,8 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true
+            "spanNulls": 900000,
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -67,7 +68,8 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true
+            "spanNulls": 900000,
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -103,7 +105,8 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true
+            "spanNulls": 900000,
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -140,7 +143,8 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true
+            "spanNulls": 900000,
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -176,7 +180,8 @@
         "defaults": {
           "unit": "Mbps",
           "custom": {
-            "spanNulls": true
+            "spanNulls": 10800000,
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -212,9 +217,10 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true,
+            "spanNulls": 900000,
             "lineWidth": 1,
-            "showPoints": "never"
+            "showPoints": "never",
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -262,10 +268,11 @@
         "defaults": {
           "unit": "percent",
           "custom": {
-            "spanNulls": true,
+            "spanNulls": 900000,
             "fillOpacity": 15,
             "lineWidth": 1,
-            "showPoints": "never"
+            "showPoints": "never",
+            "insertNulls": 900000
           },
           "min": 0,
           "decimals": 2
@@ -305,7 +312,8 @@
         "defaults": {
           "unit": "ms",
           "custom": {
-            "spanNulls": true
+            "spanNulls": 900000,
+            "insertNulls": 900000
           }
         },
         "overrides": []
@@ -344,9 +352,10 @@
           "min": 0,
           "decimals": 1,
           "custom": {
-            "spanNulls": true,
+            "spanNulls": 10800000,
             "lineWidth": 1,
-            "showPoints": "never"
+            "showPoints": "never",
+            "insertNulls": 900000
           }
         },
         "overrides": []

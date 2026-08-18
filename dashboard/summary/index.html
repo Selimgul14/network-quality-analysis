@@ -282,7 +282,20 @@
           .map(([k, v]) => { const m = /^hop_(\d+)_rtt_ms$/.exec(k); return m ? { n:+m[1], rtt:v } : null; })
           .filter(Boolean).sort((a, b) => a.n - b.n);
         const bottleneck = p.metrics.bottleneck_hop;
-        const max = Math.max(...hops.map(h => h.rtt), 1);
+        // Routers deprioritise the ICMP replies traceroute depends on, so a
+        // hop can report more delay than hops beyond it (here 18.2 ms at
+        // hop 6, then 11.0 ms at hop 8). Drawn raw, the chart appears to go
+        // backwards. Delay that is really on the path must be paid by every
+        // later hop, so cap each hop by the smallest RTT at or after it
+        // (cf. Augustin et al.). Same smoothing the probe uses to pick the
+        // bottleneck; the measured value stays in the tooltip.
+        let run = Infinity;
+        for (let i = hops.length - 1; i >= 0; i--) {
+          if (hops[i].rtt > 0) { run = Math.min(run, hops[i].rtt); hops[i].shown = run; }
+          else hops[i].shown = 0;
+        }
+        const clamped = hops.some(h => h.shown > 0 && h.shown < h.rtt - 0.05);
+        const max = Math.max(...hops.map(h => h.shown), 1);
         // Identity labels from the probe's rDNS/ASN lookup: name the hop's
         // role rather than its number ("your ISP" instead of "hop 4").
         const ROLE = { home:"home network", "isp-access":"your ISP", "isp-core":"ISP core",
@@ -302,6 +315,8 @@
             .replace(/^[A-Z0-9][A-Z0-9-]*\s+/, "")
             .replace(/^[-–]\s*/, "")
             .replace(/\s*\b(Limited|Ltd\.?|PLC|Inc\.?|LLC|S\.?A\.?|B\.?V\.?|GmbH|Parent|Corporation|Corp\.?)\b\s*$/i, "")
+            // registries often repeat the name ("Virtual1 Virtual1 Limited")
+            .replace(/\b(\w[\w-]*)(\s+\1\b)+/gi, "$1")
             .trim();
           return s || String(o);
         };
@@ -317,21 +332,25 @@
         hopsEl.innerHTML = hops.map(h => {
           const dead = h.rtt <= 0;
           const id = hopId(h.n);
-          // full detail in the tooltip: hop number, rDNS name, AS number
-          const tip = [`hop ${h.n}`, id.host, id.asn ? `AS${id.asn}` : null]
+          // full detail in the tooltip: hop number, rDNS name, AS number,
+          // operator, and the raw reading when it was capped
+          const tip = [`hop ${h.n}`, id.host, id.asn ? `AS${id.asn}` : null, id.org,
+                       h.shown < h.rtt - 0.05 ? `replied in ${h.rtt.toFixed(1)} ms` : null]
             .filter(Boolean).join(" · ");
           const cls = h.n === 1 ? "wifi" : (h.n === bottleneck ? "bottleneck" : "");
           const loss = p.metrics[`hop_${String(h.n).padStart(2, "0")}_loss_pct`];
           return `<div class="hop ${dead ? "dead" : ""}" title="${tip}">
             <span class="hn">${hopName(h.n)}</span>
-            <span class="hbarwrap"><span class="hbar ${cls}" style="width:${dead ? 0 : (h.rtt / max * 100).toFixed(1)}%"></span></span>
-            <span class="hv">${dead ? "no reply" : h.rtt.toFixed(1) + " ms"}</span>
+            <span class="hbarwrap"><span class="hbar ${cls}" style="width:${dead ? 0 : (h.shown / max * 100).toFixed(1)}%"></span></span>
+            <span class="hv">${dead ? "no reply" : h.shown.toFixed(1) + " ms"}</span>
             <span class="hn" style="width:3.2rem;text-align:left">${loss ? loss + "% loss" : ""}</span>
           </div>`;
         }).join("") + (bottleneck
           ? `<div class="axis" style="margin-top:.4rem"><span>Biggest delay increase at ${
               hopName(bottleneck) === `hop ${bottleneck}` ? `hop ${bottleneck}` :
               `${hopName(bottleneck)} (hop ${bottleneck})`} (+${p.metrics.bottleneck_delta_ms} ms)</span></div>`
+          : "") + (clamped
+          ? `<div class="axis" style="margin-top:.2rem"><span style="font-style:italic">Shown as delay that persists to the end of the path: routers answer traceroute slowly without forwarding traffic slowly. Hover a hop for its measured reply time.</span></div>`
           : "");
       } else {
         hopsEl.innerHTML = `<div class="axis"><span>no path data in this window (ICMP may be blocked here)</span></div>`;
