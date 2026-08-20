@@ -125,9 +125,17 @@
     const colour = s => s == null ? "#c6d2dc"
       : s >= 75 ? "#1f9d57" : s >= 50 ? "#d98a00" : "#d23b3b";
 
+    // ?at=<ISO instant> shows the page as it stood at a past moment; the
+    // verdict is computed over a trailing window, so an incident cannot be
+    // seen from the present without it.
+    const AT = new URLSearchParams(location.search).get("at") || "";
+    const HOURS = new URLSearchParams(location.search).get("hours") || "24";
+
     async function render() {
       let s;
-      try { s = await (await fetch("/summary?hours=24")).json(); }
+      const q = `/summary?hours=${encodeURIComponent(HOURS)}` +
+                (AT ? `&at=${encodeURIComponent(AT)}` : "");
+      try { s = await (await fetch(q)).json(); }
       catch { document.getElementById("band").textContent = "unreachable"; return; }
       const h = s.health || {};
 
@@ -166,12 +174,17 @@
           <span class="cv">${Math.round(v)}</span></div>`;
       }).join("");
 
-      document.getElementById("updated").textContent =
-        "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      document.getElementById("window").textContent =
+        s.historic ? `as it stood at ${new Date(s.as_of).toLocaleString()}`
+                   : `last ${HOURS} hours`;
+      document.getElementById("updated").textContent = s.historic
+        ? "historic view"
+        : "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
 
     render();
-    setInterval(render, 60_000);  // keep it fresh on a wall-mounted tab
+    // Auto-refresh only makes sense for the live view.
+    if (!AT) setInterval(render, 60_000);  // keep it fresh on a wall-mounted tab
   </script>
 </body>
 </html>

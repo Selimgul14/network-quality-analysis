@@ -106,6 +106,31 @@ def test_dash_auth_when_password_set(client, monkeypatch):
     assert client.get("/measurements", auth=("wifi", "s3cret")).status_code == 200
 
 
+def test_summary_at_replays_a_past_window(client):
+    """?at= computes the window ending at a past instant, so an incident
+    can be inspected after it is over (the 18 Aug outage is invisible from
+    the present because the verdict is over a trailing window)."""
+    old = sample_record()
+    old["ts"] = "2026-08-18T23:40:00+00:00"
+    old["workload"], old["endpoint"], old["ok"] = "web", "cloud", False
+    old["metrics"], old["error"] = {}, "name resolution failed"
+    assert client.post("/ingest", json=old, headers=AUTH).status_code == 201
+
+    live = client.get("/summary", params={"hours": 1}).json()
+    assert live["historic"] is False
+    assert live["overall"] == "no_data"          # nothing recent
+
+    past = client.get("/summary", params={"hours": 1, "at": "2026-08-18T23:50:00Z"}).json()
+    assert past["historic"] is True
+    assert past["as_of"].startswith("2026-08-18T23:50")
+    assert past["workloads"]["web"]["endpoint_status"]["cloud"] == "failed"
+    assert past["overall"] == "down"
+
+
+def test_summary_at_rejects_a_bad_timestamp(client):
+    assert client.get("/summary", params={"at": "yesterday"}).status_code == 422
+
+
 def test_overview_page_served(client):
     r = client.get("/overview")
     assert r.status_code == 200

@@ -110,6 +110,11 @@
         </div>
       </div>
       <span id="headline" class="pill no_data">loading…</span>
+      <div id="timeTravel" style="display:none;margin-top:.7rem;padding:.5rem .8rem;
+           background:#eef3f8;border:1px solid #cfdae4;border-radius:8px;font-size:.85rem">
+        <b>Viewing the past.</b> <span id="ttWhen"></span>
+        <a href="?" style="margin-left:.5rem">back to now →</a>
+      </div>
     </div>
 
     <div class="layout">
@@ -144,6 +149,11 @@
     let SITE = "";                            // "" = all networks; else a site label
     const fetchJSON = (p) => fetch(`${API}${p}`).then(r => r.json()).catch(() => null);
     const siteQ = () => SITE ? "&site=" + encodeURIComponent(SITE) : "";
+    // ?at=<ISO instant> views the dashboard as it stood at a past moment.
+    // The verdict is computed over a trailing window, so an incident is
+    // invisible from the present; this is how it is inspected afterwards.
+    const AT = new URLSearchParams(location.search).get("at") || "";
+    const atQ = () => AT ? "&at=" + encodeURIComponent(AT) : "";
 
     const CARDS = {
       web:      { title:"Web browsing",    sub:"Page load time",      fmt:v => v>=1000 ? (v/1000).toFixed(1)+" s" : Math.round(v)+" ms" },
@@ -224,7 +234,7 @@
 
     // Three-endpoint time-series + recent errors for one workload.
     async function cardDetail(w, meta, d) {
-      const rows = await fetchJSON(`/measurements?workload=${w}&hours=${WINDOW}&limit=5000${siteQ()}`) || [];
+      const rows = await fetchJSON(`/measurements?workload=${w}&hours=${WINDOW}&limit=5000${siteQ()}${atQ()}`) || [];
       const ok = rows.filter(r => r.ok && r.metrics && r.metrics[d.metric] != null);
       const series = {};
       for (const ep of ["local","cloud","real"]) {
@@ -247,7 +257,7 @@
 
     // Signal + CPU-temp trend from record context.
     async function ctxDetail() {
-      const rows = await fetchJSON(`/measurements?hours=${WINDOW}&limit=1000${siteQ()}`) || [];
+      const rows = await fetchJSON(`/measurements?hours=${WINDOW}&limit=1000${siteQ()}${atQ()}`) || [];
       const c = rows.filter(r => r.context && r.context.rssi_dbm != null)
                     .map(r => ({ t:new Date(r.ts).getTime(), rssi:r.context.rssi_dbm, temp:r.context.cpu_temp_c }));
       if (c.length < 2) return "Not enough context samples yet.";
@@ -272,8 +282,8 @@
     // Hop-by-hop latency + latency under load.
     async function renderPath() {
       const wrap = document.getElementById("pathPanel");
-      const paths = await fetchJSON(`/measurements?workload=path&hours=${WINDOW}&limit=200${siteQ()}`) || [];
-      const loads = await fetchJSON(`/measurements?workload=loadlat&hours=${WINDOW}&limit=200${siteQ()}`) || [];
+      const paths = await fetchJSON(`/measurements?workload=path&hours=${WINDOW}&limit=200${siteQ()}${atQ()}`) || [];
+      const loads = await fetchJSON(`/measurements?workload=loadlat&hours=${WINDOW}&limit=200${siteQ()}${atQ()}`) || [];
       const p = paths.find(r => r.ok && r.metrics && r.metrics.hops);
       const l = loads.find(r => r.ok && r.metrics && r.metrics.bloat_ms != null);
       if (!p && !l) { wrap.style.display = "none"; return; }
@@ -383,7 +393,7 @@
       if (sites.length < 2) { wrap.style.display = "none"; return; }
       const wl = Object.keys(CARDS);
       const per = {};
-      for (const s of sites) per[s.site] = await fetchJSON(`/summary?hours=${WINDOW}&site=${encodeURIComponent(s.site)}`);
+      for (const s of sites) per[s.site] = await fetchJSON(`/summary?hours=${WINDOW}&site=${encodeURIComponent(s.site)}${atQ()}`);
       let html = `<table class="cmp"><tr><th>Network</th>${wl.map(w => `<th>${CARDS[w].title}</th>`).join("")}</tr>`;
       for (const s of sites) {
         const sm = per[s.site];
@@ -414,11 +424,17 @@
       const cd = document.getElementById("ctxdetail");
       cd.className = "detail"; cd.innerHTML = ""; delete cd.dataset.filled;
 
-      const s = await fetchJSON(`/summary?hours=${WINDOW}${siteQ()}`);
+      const s = await fetchJSON(`/summary?hours=${WINDOW}${siteQ()}${atQ()}`);
       window.__S = s;
       const headline = document.getElementById("headline");
       headline.textContent = s.headline;
       headline.className = "pill " + s.overall;
+
+      if (s.historic) {
+        document.getElementById("timeTravel").style.display = "block";
+        document.getElementById("ttWhen").textContent =
+          `The ${WINDOW}h window ending ${new Date(s.as_of).toLocaleString()}, not live data.`;
+      }
 
       // Segments: each is clickable, with a detail panel right after it.
       const segEl = document.getElementById("segments");
@@ -448,7 +464,7 @@
       cards.innerHTML = "";
       for (const [w, meta] of Object.entries(CARDS)) {
         const d = s.workloads[w];
-        const rows = await fetchJSON(`/measurements?workload=${w}&endpoint=real&hours=${WINDOW}${siteQ()}`) || [];
+        const rows = await fetchJSON(`/measurements?workload=${w}&endpoint=real&hours=${WINDOW}${siteQ()}${atQ()}`) || [];
         const series = rows.filter(r => r.ok && r.metrics[d.metric] != null)
                            .map(r => r.metrics[d.metric]).reverse();
         const thr = `Healthy ${d.lower_is_better ? "under" : "over"} ${meta.fmt(d.good)}`;
@@ -472,7 +488,7 @@
       }
 
       // Footer: probe context + true last-updated with staleness.
-      const recent = await fetchJSON(`/measurements?hours=${WINDOW}&limit=50${siteQ()}`) || [];
+      const recent = await fetchJSON(`/measurements?hours=${WINDOW}&limit=50${siteQ()}${atQ()}`) || [];
       const live = document.getElementById("live"), probe = document.getElementById("probe");
       if (recent.length) {
         const latest = new Date(recent[0].ts);

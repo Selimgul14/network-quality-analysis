@@ -107,9 +107,24 @@ async def ingest_raw(key: str, request: Request) -> dict:
     return {"key": upload_raw(key, body)}
 
 
-def _rows_since(db: Session, hours: int, site: str | None = None) -> list[models.Measurement]:
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+def _parse_at(at: str | None) -> datetime | None:
+    """End of the window: an ISO 8601 instant, or None for 'now'."""
+    if not at:
+        return None
+    try:
+        ts = datetime.fromisoformat(at.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"bad `at` timestamp: {at!r}")
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+def _rows_since(db: Session, hours: int, site: str | None = None,
+                at: datetime | None = None) -> list[models.Measurement]:
+    until = at or datetime.now(timezone.utc)
+    since = until - timedelta(hours=hours)
     q = select(models.Measurement).where(models.Measurement.ts >= since)
+    if at:
+        q = q.where(models.Measurement.ts <= until)
     if site:
         q = q.where(models.Measurement.site == site)
     return list(db.scalars(q))
@@ -119,17 +134,27 @@ def _rows_since(db: Session, hours: int, site: str | None = None) -> list[models
 def summary(
     hours: int = Query(default=24, ge=1, le=336),
     site: str | None = None,
+    at: str | None = Query(default=None,
+                           description="ISO 8601 instant; view the window ending here"),
     db: Session = Depends(get_db),
 ) -> dict:
     """End-user summary: per-workload status + where-is-the-slowness.
 
     Pass `site` to scope the summary to one deployment (network/location).
+    Pass `at` to see what the dashboard would have said at a past moment,
+    e.g. `?at=2026-08-18T23:40Z&hours=1` replays the uplink outage. The
+    verdict is computed over a trailing window, so a past incident is
+    invisible from the present: this is how it gets inspected afterwards.
     """
+    when = _parse_at(at)
     rows = [
         {"workload": r.workload, "endpoint": r.endpoint, "ok": r.ok, "metrics": r.metrics}
-        for r in _rows_since(db, hours, site)
+        for r in _rows_since(db, hours, site, when)
     ]
-    return compute_summary(rows, hours)
+    out = compute_summary(rows, hours)
+    out["as_of"] = (when or datetime.now(timezone.utc)).isoformat()
+    out["historic"] = when is not None
+    return out
 
 
 @app.get("/sites", dependencies=[Depends(require_dash_auth)])
@@ -165,10 +190,15 @@ def measurements(
     site: str | None = None,
     hours: int = Query(default=24, ge=1, le=336),
     limit: int = Query(default=5000, ge=1, le=50000),
+    at: str | None = Query(default=None,
+                           description="ISO 8601 instant; window ends here instead of now"),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    until = _parse_at(at) or datetime.now(timezone.utc)
+    since = until - timedelta(hours=hours)
     q = select(models.Measurement).where(models.Measurement.ts >= since)
+    if at:
+        q = q.where(models.Measurement.ts <= until)
     if workload:
         q = q.where(models.Measurement.workload == workload)
     if endpoint:
