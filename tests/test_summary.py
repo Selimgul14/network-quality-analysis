@@ -105,10 +105,58 @@ def test_failed_runs_are_excluded():
     assert s["workloads"]["web"]["per_endpoint"]["real"] == 1200
 
 
+def _fail(workload: str, endpoint: str, error: str = "name resolution") -> dict:
+    return {"workload": workload, "endpoint": endpoint, "ok": False,
+            "metrics": {}, "error": error}
+
+
 def test_no_data():
     s = compute_summary([], hours=24)
     assert s["overall"] == "no_data"
     assert s["likely_cause"] is None
+
+
+# --- outage vs no data -------------------------------------------------------
+# Modelled on the real uplink failure of 18 August 2026, 23:23-00:03 UTC:
+# the gateway answered with 0% loss throughout while every off-site
+# destination lost 100%. Before this distinction existed the page reported
+# "No measurements yet" during the outage.
+
+
+def test_total_outage_is_reported_as_down_not_no_data():
+    rows = [_fail(w, ep) for w in ("web", "video", "download") for ep in ("cloud", "real")]
+    rows += [_fail("email", "real")]
+    rows += [_row("path", "real", first_hop_rtt_ms=4.9)]  # the link still answers
+    s = compute_summary(rows, hours=1)
+    assert s["overall"] == "down"
+    assert s["headline"] == "Your WiFi is fine, but the internet connection is down"
+    assert s["segments"]["internet_path"] == "down"
+    assert s["segments"]["wifi_link"] == "ok"      # gateway proves the link is alive
+    assert s["likely_cause"] == "internet_path"
+
+
+def test_failed_runs_are_not_confused_with_absent_runs():
+    """Nothing attempted is no_data; everything attempted and failed is not."""
+    assert compute_summary([], hours=1)["overall"] == "no_data"
+    attempted = compute_summary([_fail("web", "cloud"), _fail("web", "real")], hours=1)
+    assert attempted["workloads"]["web"]["endpoint_status"]["cloud"] == "failed"
+    assert attempted["workloads"]["web"]["endpoint_status"]["local"] == "no_data"
+    assert attempted["overall"] == "down"
+
+
+def test_partial_failure_is_not_an_outage():
+    """Some runs succeeded, so the endpoint is reachable, just unreliable."""
+    rows = [_row("web", "real", load_ms=1200), _fail("web", "real")]
+    s = compute_summary(rows, hours=1)
+    assert s["workloads"]["web"]["endpoint_status"]["real"] == "good"
+    assert s["overall"] != "down"
+
+
+def test_wifi_link_down_when_even_the_local_leg_fails():
+    rows = [_fail("web", "local"), _fail("web", "cloud"), _fail("web", "real")]
+    s = compute_summary(rows, hours=1)
+    assert s["segments"]["wifi_link"] == "down"
+    assert s["headline"] == "Your WiFi link is down"
     assert s["health"]["score"] is None
     assert s["health"]["label"] == "no_data"
 

@@ -76,6 +76,18 @@ BLOAT_GOOD_MS, BLOAT_POOR_MS = 30.0, 100.0
 LOSS_GOOD_PCT, LOSS_POOR_PCT = 1.0, 5.0
 
 
+def _attempts(rows: list[dict], workload: str, endpoint: str) -> tuple[int, int]:
+    """(attempted, failed) runs for one workload/endpoint in the window.
+
+    A run that was tried and failed is evidence of a problem; a run that
+    never happened is evidence of nothing. Before this distinction existed
+    a total outage looked identical to an idle probe, and the page said
+    "No measurements yet" during the 18 August uplink failure.
+    """
+    tried = [r for r in rows if r["workload"] == workload and r["endpoint"] == endpoint]
+    return len(tried), sum(1 for r in tried if not r["ok"])
+
+
 def _median_metric(rows: list[dict], workload: str, endpoint: str) -> float | None:
     metric = WORKLOAD_METRIC[workload][0]
     vals = [
@@ -93,9 +105,19 @@ def _thresholds(workload: str, endpoint: str | None = None) -> tuple[float, floa
     return ENDPOINT_THRESHOLDS.get((workload, endpoint), (good, poor))
 
 
-def _status(workload: str, value: float | None, endpoint: str | None = None) -> str:
-    """good | degraded | poor | no_data for one median value."""
+def _status(workload: str, value: float | None, endpoint: str | None = None,
+            attempts: tuple[int, int] | None = None) -> str:
+    """good | degraded | poor | failed | no_data for one median value.
+
+    `attempts` is (tried, failed): with no usable median, runs that were
+    tried and failed mean the target is unreachable ("failed"), which is
+    a much stronger statement than "no_data".
+    """
     if value is None:
+        if attempts:
+            tried, failed = attempts
+            if tried and failed == tried:
+                return "failed"
         return "no_data"
     good, poor = _thresholds(workload, endpoint)
     if workload in LOWER_IS_BETTER:
@@ -197,7 +219,7 @@ def _health(workloads: dict[str, Any], rows: list[dict]) -> dict[str, Any]:
 
 def _attribute(per_endpoint: dict[str, str]) -> str | None:
     """Map the three endpoint statuses to the segment at fault, if any."""
-    bad = {"degraded", "poor"}
+    bad = {"degraded", "poor", "failed"}
     if per_endpoint.get("local") in bad:
         return "wifi_link"
     if per_endpoint.get("cloud") in bad:
@@ -212,13 +234,19 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     suspects: list[str] = []
     endpoint_has_data = {"local": False, "cloud": False, "real": False}
 
+    endpoint_all_failed = {"local": False, "cloud": False, "real": False}
+
     for w in WORKLOAD_METRIC:
         metric, good, poor, unit = WORKLOAD_METRIC[w]
         values = {ep: _median_metric(rows, w, ep) for ep in ("local", "cloud", "real")}
+        tries = {ep: _attempts(rows, w, ep) for ep in ("local", "cloud", "real")}
         for ep, v in values.items():
             if v is not None:
                 endpoint_has_data[ep] = True
-        statuses = {ep: _status(w, v, ep) for ep, v in values.items()}
+        statuses = {ep: _status(w, v, ep, tries[ep]) for ep, v in values.items()}
+        for ep, st in statuses.items():
+            if st == "failed":
+                endpoint_all_failed[ep] = True
         cause = _attribute(statuses)
         if cause:
             suspects.append(cause)
@@ -235,7 +263,11 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
             "poor": poor,
             "lower_is_better": w in LOWER_IS_BETTER,
             "value": headline,
-            "status": _status(w, headline, headline_ep),
+            "status": _status(w, headline, headline_ep,
+                              tries[headline_ep] if headline_ep else
+                              # nothing produced a number: if every endpoint
+                              # that was tried failed, say so
+                              tuple(map(sum, zip(*tries.values())))),
             "per_endpoint": values,
             "endpoint_status": statuses,
             "likely_cause": cause,
@@ -244,9 +276,12 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     # Segment view: no_data if its endpoint reported nothing, else suspect
     # if any workload points at it, else ok. Avoids a false "OK" for a
     # segment (e.g. WiFi link) that was never actually measured.
+    # "down" outranks the rest: every run against that endpoint was tried
+    # and failed, so the segment is not merely slow, it is unreachable.
     segments = {
         s: (
-            "no_data" if not endpoint_has_data[SEGMENT_ENDPOINT[s]]
+            "down" if endpoint_all_failed[SEGMENT_ENDPOINT[s]]
+            else "no_data" if not endpoint_has_data[SEGMENT_ENDPOINT[s]]
             else "suspect" if s in suspects
             else "ok"
         )
@@ -258,7 +293,10 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     # it still gives a real (latency-only) verdict on the link.
     first_hop = _first_hop_rtt(rows)
     wifi_from_path = False
-    if segments["wifi_link"] == "no_data" and first_hop is not None:
+    if segments["wifi_link"] in ("no_data", "down") and first_hop is not None:
+        # The gateway answering over the air proves the link is alive even
+        # when every off-site workload failed: that is the whole point of
+        # measuring the local leg separately.
         wifi_from_path = True
         segments["wifi_link"] = "ok" if first_hop <= WIFI_LINK_GOOD_MS else "suspect"
         if first_hop > WIFI_LINK_GOOD_MS:
@@ -267,15 +305,27 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     likely = max(set(suspects), key=suspects.count) if suspects else None
 
     statuses = [w["status"] for w in workloads.values() if w["status"] != "no_data"]
+    down = [s for s, v in segments.items() if v == "down"]
     overall = (
-        "no_data" if not statuses
+        "down" if down
+        else "no_data" if not statuses
         else "poor" if "poor" in statuses
         else "slow" if "degraded" in statuses
         else "good"
     )
 
     degraded = [w for w, d in workloads.items() if d["status"] in ("degraded", "poor")]
-    if overall == "good":
+    if overall == "down":
+        # Name the segment in plain English: during the 18 August uplink
+        # failure the WiFi link was fine and everything beyond it was not,
+        # which is exactly what a user needs told.
+        if segments["wifi_link"] == "ok" and "internet_path" in down:
+            headline_text = "Your WiFi is fine, but the internet connection is down"
+        elif "wifi_link" in down:
+            headline_text = "Your WiFi link is down"
+        else:
+            headline_text = f"{SEGMENT_LABELS[down[0]]} is not responding"
+    elif overall == "good":
         headline_text = "Everything looks fine"
     elif overall == "no_data":
         headline_text = "No measurements yet"

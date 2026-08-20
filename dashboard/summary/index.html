@@ -26,6 +26,8 @@
     .slow, .degraded { color:var(--amber); background:var(--amber-bg); }
     .poor  { color:var(--red); background:var(--red-bg); }
     .no_data { color:var(--mute); background:#e8edf2; }
+    .down, .failed { color:var(--red); background:var(--red-bg); }
+    .tv.failed { color:var(--red); font-weight:700; }
     .layout { display:grid; grid-template-columns:1fr 2fr; gap:1rem; margin-top:1rem; }
     .cards { display:grid; grid-template-columns:repeat(2,1fr); gap:1rem; }
     .card, .side { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem 1.25rem; }
@@ -160,7 +162,8 @@
       internet_path: "The task to your local server is fine, but our controlled test server out on the internet is slow. That points to the path from your router out to the internet, not your WiFi.",
       third_party: "Both your local server and our test server are fine, only the real website or app is slow. The bottleneck is that third-party service itself.",
     };
-    const STATUS_WORD = { good:"Healthy", degraded:"Degraded", poor:"Poor", slow:"Slow", no_data:"No data" };
+    const STATUS_WORD = { good:"Healthy", degraded:"Degraded", poor:"Poor", slow:"Slow",
+                          failed:"Unreachable", down:"Down", no_data:"No data" };
     const EP = { local:"Your link", cloud:"Test server", real:"Real site" };
     const EP_COLOR = { local:"var(--c-local)", cloud:"var(--c-cloud)", real:"var(--c-real)" };
 
@@ -422,8 +425,11 @@
       segEl.innerHTML = "";
       for (const [key, meta] of Object.entries(SEGS)) {
         const isCause = s.likely_cause === key, seg = s.segments[key];
-        const cls = seg === "ok" ? "good" : seg === "no_data" ? "no_data" : "slow";
-        let label = isCause ? "LIKELY CAUSE" : seg === "ok" ? "OK" : seg === "no_data" ? "NOT MEASURED" : "SUSPECT";
+        const cls = seg === "ok" ? "good" : seg === "no_data" ? "no_data"
+                  : seg === "down" ? "poor" : "slow";
+        let label = seg === "down" ? "NOT RESPONDING"
+                  : isCause ? "LIKELY CAUSE" : seg === "ok" ? "OK"
+                  : seg === "no_data" ? "NOT MEASURED" : "SUSPECT";
         // WiFi link judged from hop 1 when there is no local reference
         // server: show the latency so the verdict's basis is visible.
         if (key === "wifi_link" && s.wifi_link_from_path && s.wifi_link_rtt_ms != null) {

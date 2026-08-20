@@ -34,6 +34,9 @@
                   background:#c6d2dc; box-shadow:0 0 0 4px #f1f5f8; }
     .light.ok .dot      { background:var(--green); box-shadow:0 0 0 4px #e8f5ee; }
     .light.suspect .dot { background:var(--amber); box-shadow:0 0 0 4px #fbf1de; }
+    .light.down { border-color:var(--red); }
+    .light.down .dot    { background:var(--red); box-shadow:0 0 0 4px #fadddd; }
+    .light.down .s      { color:var(--red); font-weight:600; }
     .light .n { font-size:.82rem; font-weight:600; line-height:1.25; }
     .light .s { font-size:.72rem; color:var(--mute); margin-top:.15rem; }
 
@@ -141,9 +144,11 @@
 
       document.getElementById("lights").innerHTML = Object.entries(SEGS).map(([k, name]) => {
         const st = (s.segments || {})[k] || "no_data";
+        const word = { no_data: "not measured", down: "not responding", ok: "ok",
+                       suspect: "suspect" }[st] || st;
         return `<div class="light ${st}"><div class="dot"></div>
           <div class="n">${name}</div>
-          <div class="s">${st === "no_data" ? "not measured" : st}</div></div>`;
+          <div class="s">${word}</div></div>`;
       }).join("");
 
       // Heaviest weight first, so the reader sees what matters most.
