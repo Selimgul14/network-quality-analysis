@@ -144,12 +144,42 @@ def test_failed_runs_are_not_confused_with_absent_runs():
     assert attempted["overall"] == "down"
 
 
-def test_partial_failure_is_not_an_outage():
-    """Some runs succeeded, so the endpoint is reachable, just unreliable."""
+def test_partial_failure_reads_as_unstable_not_good():
+    """Half the runs failed. The median of the surviving half says 1200 ms
+    and looks healthy, which is exactly the blindness availability fixes."""
     rows = [_row("web", "real", load_ms=1200), _fail("web", "real")]
     s = compute_summary(rows, hours=1)
+    assert s["workloads"]["web"]["endpoint_status"]["real"] == "unstable"
+    assert s["overall"] == "unstable"
+    assert s["overall"] != "down"          # it did work some of the time
+    assert s["health"]["availability"]["pct"] == 50.0
+    # quality describes the runs that worked; score is what was experienced
+    assert s["health"]["quality"] > s["health"]["score"]
+
+
+def test_a_single_blip_does_not_flip_the_verdict():
+    """One failure in a long healthy window is noise, not instability."""
+    rows = [_row("web", "real", load_ms=1200) for _ in range(50)] + [_fail("web", "real")]
+    s = compute_summary(rows, hours=24)
     assert s["workloads"]["web"]["endpoint_status"]["real"] == "good"
-    assert s["overall"] != "down"
+    assert s["overall"] == "good"
+    assert s["health"]["availability"]["pct"] >= 98
+
+
+def test_availability_scales_the_health_score():
+    """A window that was down a third of the time cannot score excellent."""
+    good = [_row(w, "real", **m) for w, m in (
+        ("web", {"load_ms": 1000}), ("video", {"startup_ms": 200}),
+        ("email", {"fetch_ms": 500}), ("download", {"throughput_mbps": 60}))]
+    healthy = compute_summary(good * 2, hours=1)["health"]
+    assert healthy["availability"]["pct"] == 100.0
+    assert healthy["score"] == healthy["quality"]
+
+    # same quality of service, but a third of the attempts failed outright
+    patchy = compute_summary(good * 2 + [_fail("web", "real")] * 4, hours=1)["health"]
+    assert patchy["availability"]["pct"] < 70
+    assert patchy["score"] < patchy["quality"]
+    assert patchy["label"] in ("fair", "poor", "bad")
 
 
 def test_wifi_link_down_when_even_the_local_leg_fails():

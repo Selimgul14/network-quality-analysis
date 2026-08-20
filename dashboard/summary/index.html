@@ -27,6 +27,8 @@
     .poor  { color:var(--red); background:var(--red-bg); }
     .no_data { color:var(--mute); background:#e8edf2; }
     .down, .failed { color:var(--red); background:var(--red-bg); }
+    .unstable { color:var(--amber); background:var(--amber-bg); }
+    .tv.unstable { color:var(--amber); font-weight:700; }
     .tv.failed { color:var(--red); font-weight:700; }
     .layout { display:grid; grid-template-columns:1fr 2fr; gap:1rem; margin-top:1rem; }
     .cards { display:grid; grid-template-columns:repeat(2,1fr); gap:1rem; }
@@ -173,7 +175,8 @@
       third_party: "Both your local server and our test server are fine, only the real website or app is slow. The bottleneck is that third-party service itself.",
     };
     const STATUS_WORD = { good:"Healthy", degraded:"Degraded", poor:"Poor", slow:"Slow",
-                          failed:"Unreachable", down:"Down", no_data:"No data" };
+                          failed:"Unreachable", down:"Down", unstable:"Dropped out",
+                          no_data:"No data" };
     const EP = { local:"Your link", cloud:"Test server", real:"Real site" };
     const EP_COLOR = { local:"var(--c-local)", cloud:"var(--c-cloud)", real:"var(--c-real)" };
 
@@ -444,6 +447,7 @@
         const cls = seg === "ok" ? "good" : seg === "no_data" ? "no_data"
                   : seg === "down" ? "poor" : "slow";
         let label = seg === "down" ? "NOT RESPONDING"
+                  : seg === "unstable" ? "DROPPED OUT"
                   : isCause ? "LIKELY CAUSE" : seg === "ok" ? "OK"
                   : seg === "no_data" ? "NOT MEASURED" : "SUSPECT";
         // WiFi link judged from hop 1 when there is no local reference

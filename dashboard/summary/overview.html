@@ -37,6 +37,12 @@
     .light.down { border-color:var(--red); }
     .light.down .dot    { background:var(--red); box-shadow:0 0 0 4px #fadddd; }
     .light.down .s      { color:var(--red); font-weight:600; }
+    .light.unstable { border-color:var(--amber); }
+    .light.unstable .dot { background:var(--amber); box-shadow:0 0 0 4px #fbf1de; }
+    .light.unstable .s   { color:var(--amber); font-weight:600; }
+    .avail { margin:.9rem auto 0; font-size:.85rem; color:var(--mute); }
+    .avail b { color:var(--ink); }
+    .avail.bad b { color:var(--red); }
     .light .n { font-size:.82rem; font-weight:600; line-height:1.25; }
     .light .s { font-size:.72rem; color:var(--mute); margin-top:.15rem; }
 
@@ -81,6 +87,7 @@
       </svg>
 
       <p class="verdict" id="verdict"></p>
+      <p class="avail" id="avail"></p>
       <div class="lights" id="lights"></div>
 
       <hr class="rule">
@@ -150,10 +157,23 @@
       document.getElementById("verdict").textContent =
         s.likely_cause ? CAUSE[s.likely_cause] : (s.headline || "");
 
+      // Availability is the part a median cannot show: tasks that never
+      // completed leave no number behind.
+      const a = h.availability || {};
+      const av = document.getElementById("avail");
+      if (a.pct != null && a.attempted) {
+        const done = a.attempted - a.failed;
+        av.className = "avail" + (a.pct < 99 ? " bad" : "");
+        av.innerHTML = a.failed
+          ? `<b>${a.pct}% of tasks completed</b> (${done} of ${a.attempted}). ` +
+            `Scored ${Math.round(h.quality)} while working, ${Math.round(h.score)} overall.`
+          : `<b>All ${a.attempted} tasks completed.</b>`;
+      } else { av.textContent = ""; }
+
       document.getElementById("lights").innerHTML = Object.entries(SEGS).map(([k, name]) => {
         const st = (s.segments || {})[k] || "no_data";
         const word = { no_data: "not measured", down: "not responding", ok: "ok",
-                       suspect: "suspect" }[st] || st;
+                       unstable: "dropped out", suspect: "suspect" }[st] || st;
         return `<div class="light ${st}"><div class="dot"></div>
           <div class="n">${name}</div>
           <div class="s">${word}</div></div>`;

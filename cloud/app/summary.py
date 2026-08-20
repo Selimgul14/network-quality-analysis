@@ -75,6 +75,18 @@ HEALTH_WEIGHTS = {
 BLOAT_GOOD_MS, BLOAT_POOR_MS = 30.0, 100.0
 LOSS_GOOD_PCT, LOSS_POOR_PCT = 1.0, 5.0
 
+# A median can only describe runs that produced a number, so it is blind
+# to runs that failed outright. A window straddling an outage therefore
+# scored 93 "excellent" while its own segments read "not responding".
+# Availability is the missing dimension: of the application-level tasks
+# attempted, how many completed at all. The quality score describes how
+# good the service was while it worked; multiplying by availability gives
+# the quality actually experienced across the window, which is zero for
+# the time the network was unusable.
+AVAILABILITY_WORKLOADS = ("web", "video", "email", "download")
+# Below this share of failures a segment is unstable rather than down.
+UNSTABLE_FAIL_PCT = 10.0
+
 
 def _attempts(rows: list[dict], workload: str, endpoint: str) -> tuple[int, int]:
     """(attempted, failed) runs for one workload/endpoint in the window.
@@ -107,17 +119,20 @@ def _thresholds(workload: str, endpoint: str | None = None) -> tuple[float, floa
 
 def _status(workload: str, value: float | None, endpoint: str | None = None,
             attempts: tuple[int, int] | None = None) -> str:
-    """good | degraded | poor | failed | no_data for one median value.
+    """good | degraded | poor | unstable | failed | no_data.
 
-    `attempts` is (tried, failed): with no usable median, runs that were
-    tried and failed mean the target is unreachable ("failed"), which is
-    a much stronger statement than "no_data".
+    `attempts` is (tried, failed). Every attempt failing means the target
+    was unreachable ("failed"), a much stronger statement than "no_data".
+    Some attempts failing means it was reachable only part of the time
+    ("unstable"), which the median alone would hide entirely.
     """
+    if attempts:
+        tried, failed = attempts
+        if tried and failed == tried:
+            return "failed"
+        if tried and failed / tried * 100 >= UNSTABLE_FAIL_PCT:
+            return "unstable"
     if value is None:
-        if attempts:
-            tried, failed = attempts
-            if tried and failed == tried:
-                return "failed"
         return "no_data"
     good, poor = _thresholds(workload, endpoint)
     if workload in LOWER_IS_BETTER:
@@ -195,12 +210,21 @@ def _health(workloads: dict[str, Any], rows: list[dict]) -> dict[str, Any]:
         for w, d in workloads.items()
     }
     components["responsiveness"] = _responsiveness(rows)
-    avail = {k: v for k, v in components.items() if v is not None}
-    if avail:
-        wsum = sum(HEALTH_WEIGHTS[k] for k in avail)
-        score = round(sum(HEALTH_WEIGHTS[k] * v for k, v in avail.items()) / wsum, 1)
+    have = {k: v for k, v in components.items() if v is not None}
+    if have:
+        wsum = sum(HEALTH_WEIGHTS[k] for k in have)
+        quality = round(sum(HEALTH_WEIGHTS[k] * v for k, v in have.items()) / wsum, 1)
     else:
-        score = None
+        quality = None
+
+    # Quality describes the runs that worked. Scaling by availability
+    # gives the quality actually experienced: a service that was down for
+    # a third of the window delivered nothing for that third.
+    availability = _availability(rows)
+    score = quality
+    if quality is not None and availability["pct"] is not None:
+        score = round(quality * availability["pct"] / 100, 1)
+
     label = (
         "no_data" if score is None
         else "excellent" if score >= 90
@@ -212,14 +236,36 @@ def _health(workloads: dict[str, Any], rows: list[dict]) -> dict[str, Any]:
     return {
         "score": score,
         "label": label,
+        # kept separate so the page can say "good when it worked, but it
+        # only worked 67% of the time"
+        "quality": quality,
+        "availability": availability,
         "components": components,
         "weights": HEALTH_WEIGHTS,
     }
 
 
+def _availability(rows: list[dict]) -> dict[str, Any]:
+    """How much of the window the network actually carried a user task.
+
+    Counted over the application-level workloads only: a failed web or
+    video run is a task the user could not complete. Baseline pings are
+    excluded because they succeed (reporting 100% loss) even when nothing
+    else works, so counting them would understate an outage.
+    """
+    tried = [r for r in rows if r["workload"] in AVAILABILITY_WORKLOADS]
+    failed = [r for r in tried if not r["ok"]]
+    pct = round((len(tried) - len(failed)) / len(tried) * 100, 1) if tried else None
+    return {
+        "pct": pct,
+        "attempted": len(tried),
+        "failed": len(failed),
+    }
+
+
 def _attribute(per_endpoint: dict[str, str]) -> str | None:
     """Map the three endpoint statuses to the segment at fault, if any."""
-    bad = {"degraded", "poor", "failed"}
+    bad = {"degraded", "poor", "failed", "unstable"}
     if per_endpoint.get("local") in bad:
         return "wifi_link"
     if per_endpoint.get("cloud") in bad:
@@ -235,6 +281,7 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     endpoint_has_data = {"local": False, "cloud": False, "real": False}
 
     endpoint_all_failed = {"local": False, "cloud": False, "real": False}
+    endpoint_unstable = {"local": False, "cloud": False, "real": False}
 
     for w in WORKLOAD_METRIC:
         metric, good, poor, unit = WORKLOAD_METRIC[w]
@@ -247,6 +294,8 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         for ep, st in statuses.items():
             if st == "failed":
                 endpoint_all_failed[ep] = True
+            elif st == "unstable":
+                endpoint_unstable[ep] = True
         cause = _attribute(statuses)
         if cause:
             suspects.append(cause)
@@ -281,6 +330,7 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     segments = {
         s: (
             "down" if endpoint_all_failed[SEGMENT_ENDPOINT[s]]
+            else "unstable" if endpoint_unstable[SEGMENT_ENDPOINT[s]]
             else "no_data" if not endpoint_has_data[SEGMENT_ENDPOINT[s]]
             else "suspect" if s in suspects
             else "ok"
@@ -293,7 +343,7 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
     # it still gives a real (latency-only) verdict on the link.
     first_hop = _first_hop_rtt(rows)
     wifi_from_path = False
-    if segments["wifi_link"] in ("no_data", "down") and first_hop is not None:
+    if segments["wifi_link"] in ("no_data", "down", "unstable") and first_hop is not None:
         # The gateway answering over the air proves the link is alive even
         # when every off-site workload failed: that is the whole point of
         # measuring the local leg separately.
@@ -306,8 +356,12 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
 
     statuses = [w["status"] for w in workloads.values() if w["status"] != "no_data"]
     down = [s for s, v in segments.items() if v == "down"]
+    unstable = [s for s, v in segments.items() if v == "unstable"]
+    health = _health(workloads, rows)
+    avail = health["availability"]
     overall = (
         "down" if down
+        else "unstable" if unstable
         else "no_data" if not statuses
         else "poor" if "poor" in statuses
         else "slow" if "degraded" in statuses
@@ -325,6 +379,15 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
             headline_text = "Your WiFi link is down"
         else:
             headline_text = f"{SEGMENT_LABELS[down[0]]} is not responding"
+    elif overall == "unstable":
+        # Part of the window worked and part did not: say so, rather than
+        # reporting the median of the half that worked.
+        pct = avail["pct"]
+        where = ("Your WiFi is fine, but the internet connection"
+                 if segments["wifi_link"] == "ok" and "internet_path" in unstable
+                 else "Your WiFi link" if "wifi_link" in unstable
+                 else SEGMENT_LABELS[unstable[0]])
+        headline_text = f"{where} dropped out: {pct}% of tasks completed"
     elif overall == "good":
         headline_text = "Everything looks fine"
     elif overall == "no_data":
@@ -338,8 +401,9 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         "overall": overall,
         "headline": headline_text,
         # Composite 0-100 health over all components, weights documented
-        # at HEALTH_WEIGHTS (each tied to a cited source).
-        "health": _health(workloads, rows),
+        # at HEALTH_WEIGHTS (each tied to a cited source), scaled by the
+        # share of user tasks that completed at all.
+        "health": health,
         "segments": segments,
         "likely_cause": likely,
         "workloads": workloads,
