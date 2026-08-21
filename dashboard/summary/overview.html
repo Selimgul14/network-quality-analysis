@@ -64,12 +64,24 @@
     footer a { color:var(--mute); text-decoration:none; }
     footer a:hover { color:var(--ink); }
     .stale { color:var(--red); font-weight:600; }
+    /* Network picker. Without it this page silently averaged every site
+       in the database together, which for a single headline score across
+       different networks (and now different devices) is meaningless. */
+    .pick { display:flex; justify-content:center; align-items:center; gap:.4rem;
+            margin:0 0 .6rem; font-size:.8rem; color:var(--mute); }
+    .pick select { font:inherit; color:var(--ink); background:#fff;
+                   border:1px solid #dbe3ea; border-radius:8px; padding:.2rem .4rem; }
+    .mixed { color:var(--red); font-weight:600; }
     @media (max-width:480px){ .card{padding:1.5rem 1.2rem;} .lights{gap:.4rem;} }
   </style>
 </head>
 <body>
   <main>
     <div class="card">
+      <div class="pick">
+        <label for="site">network</label>
+        <select id="site"><option value="">all networks combined</option></select>
+      </div>
       <p class="eyebrow" id="window">last 24 hours</p>
       <h1>How is the WiFi doing?</h1>
 
@@ -137,11 +149,41 @@
     // seen from the present without it.
     const AT = new URLSearchParams(location.search).get("at") || "";
     const HOURS = new URLSearchParams(location.search).get("hours") || "24";
+    // Scope the verdict to one deployment. With no site the backend
+    // aggregates every row it has, which mixes networks and, since the
+    // phone probe exists, mixes devices too: a single health score over
+    // a Pi at one site and a phone at another describes nothing real.
+    const SITE = new URLSearchParams(location.search).get("site") || "";
+
+    // Populate the picker from the sites the backend actually holds.
+    async function loadSites() {
+      const sel = document.getElementById("site");
+      let sites = [];
+      try { sites = await (await fetch("/sites")).json(); } catch { return; }
+      for (const s of sites) {
+        // /sites reports rows predating the site column as "unlabelled",
+        // but those are NULL and no site filter can match them, so an
+        // option for it would be a dead end. They stay visible under
+        // "all networks combined".
+        if (s.site === "unlabelled") continue;
+        const o = document.createElement("option");
+        o.value = s.site;
+        o.textContent = `${s.site} (${s.count.toLocaleString()})`;
+        sel.appendChild(o);
+      }
+      sel.value = SITE;
+      sel.onchange = () => {
+        const q = new URLSearchParams(location.search);
+        if (sel.value) q.set("site", sel.value); else q.delete("site");
+        location.search = q.toString();
+      };
+    }
 
     async function render() {
       let s;
       const q = `/summary?hours=${encodeURIComponent(HOURS)}` +
-                (AT ? `&at=${encodeURIComponent(AT)}` : "");
+                (AT ? `&at=${encodeURIComponent(AT)}` : "") +
+                (SITE ? `&site=${encodeURIComponent(SITE)}` : "");
       try { s = await (await fetch(q)).json(); }
       catch { document.getElementById("band").textContent = "unreachable"; return; }
       const h = s.health || {};
@@ -194,14 +236,21 @@
           <span class="cv">${Math.round(v)}</span></div>`;
       }).join("");
 
-      document.getElementById("window").textContent =
-        s.historic ? `as it stood at ${new Date(s.as_of).toLocaleString()}`
-                   : `last ${HOURS} hours`;
+      const when = s.historic
+        ? `as it stood at ${new Date(s.as_of).toLocaleString()}`
+        : `last ${HOURS} hours`;
+      const win = document.getElementById("window");
+      // An unscoped score is a blend, and the page has to admit it rather
+      // than presenting an average of several networks as one verdict.
+      win.innerHTML = SITE
+        ? `${when} · ${SITE}`
+        : `${when} · <span class="mixed">all networks combined</span>`;
       document.getElementById("updated").textContent = s.historic
         ? "historic view"
         : "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     }
 
+    loadSites();
     render();
     // Auto-refresh only makes sense for the live view.
     if (!AT) setInterval(render, 60_000);  // keep it fresh on a wall-mounted tab
