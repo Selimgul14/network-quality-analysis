@@ -1,0 +1,23 @@
+// Build settings for the app target. Committed, and deliberately empty of
+// values: the real ones live in Secrets.xcconfig, which is gitignored.
+//
+// The include below is optional (`#include?`), so the project still builds
+// on a machine that has no secrets file. AppConfig then throws a clear
+// message naming the missing key rather than failing obscurely at runtime.
+//
+// Reminder: `//` starts a comment here, so hosts are stored without a
+// scheme and Swift adds it back.
+
+PROBE_ID = iphone-unconfigured
+API_HOST =
+CLOUD_REF_HOST =
+INGEST_TOKEN =
+DASH_USER = wifi
+DASH_PASS =
+REAL_WEB =
+REAL_VIDEO =
+REAL_VIDEO_SCHEME = https
+REAL_DOWNLOAD =
+REAL_DOWNLOAD_SCHEME = http
+
+#include? "../Secrets.xcconfig"

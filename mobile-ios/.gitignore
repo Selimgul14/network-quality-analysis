@@ -1,0 +1,19 @@
+# Local credentials: the ingest token must never be committed (see C5).
+Secrets.xcconfig
+*.local.xcconfig
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcscmblueprint
+*.xccheckout
+.swiftpm/
+
+# SwiftPM
+.build/
+Package.resolved
+
+# macOS
+.DS_Store

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Required to reach the default gateway. Since iOS 14 a LAN address
+	     needs user consent, and if it is refused the packets are dropped
+	     silently: no error, no reply. Without this key the WiFi-link leg
+	     (M10) cannot work at all. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>WiFi Probe measures the round-trip time to your router, which is how it tells a slow WiFi link apart from a slow internet connection.</string>
+
+	<!-- The real download target is cleartext HTTP, so App Transport
+	     Security blocks it by default. Without this exception the
+	     download workload fails every run for a reason that looks like a
+	     network fault. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>thinkbroadband.com</key>
+			<dict>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!-- Build settings from Secrets.xcconfig, which is gitignored. -->
+	<key>PROBE_ID</key>
+	<string>$(PROBE_ID)</string>
+	<key>API_HOST</key>
+	<string>$(API_HOST)</string>
+	<key>CLOUD_REF_HOST</key>
+	<string>$(CLOUD_REF_HOST)</string>
+	<key>INGEST_TOKEN</key>
+	<string>$(INGEST_TOKEN)</string>
+	<key>DASH_USER</key>
+	<string>$(DASH_USER)</string>
+	<key>DASH_PASS</key>
+	<string>$(DASH_PASS)</string>
+	<key>REAL_WEB</key>
+	<string>$(REAL_WEB)</string>
+	<key>REAL_VIDEO</key>
+	<string>$(REAL_VIDEO)</string>
+	<key>REAL_VIDEO_SCHEME</key>
+	<string>$(REAL_VIDEO_SCHEME)</string>
+	<key>REAL_DOWNLOAD</key>
+	<string>$(REAL_DOWNLOAD)</string>
+	<key>REAL_DOWNLOAD_SCHEME</key>
+	<string>$(REAL_DOWNLOAD_SCHEME)</string>
+</dict>
+</plist>
