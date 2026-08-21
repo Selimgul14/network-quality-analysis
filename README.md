@@ -78,6 +78,7 @@ site since late July 2026: Pi 4 `pi-maple-01` -> Azure API -> Timescale
 infra/README.md for hostnames and the redeploy path). Raw mtr JSON ships
 to Blob via `/ingest/raw`.
 
-Remaining: fault injection (step 7), threshold tuning after a soak,
+Remaining (CA2 submitted 21 Aug; dissertation due 11 Sep): fault
+injection (step 7), threshold tuning after a soak,
 credential rotation, and probe liveness monitoring (a crash loop went
 unnoticed for 24 h on 17-18 August; see ../hardware/pi-setup.md).
