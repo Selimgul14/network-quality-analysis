@@ -69,7 +69,26 @@ def test_video_startup_and_rebuffer(tmp_path: Path):
 # --- path --------------------------------------------------------------------
 
 
-@pytest.mark.skipif(shutil.which("mtr") is None, reason="mtr not installed")
+def _mtr_usable() -> bool:
+    """Installed is not the same as usable: mtr needs raw sockets, which
+    means root on macOS. The probe runs as root under systemd on the Pi,
+    so this only skips the test on a developer machine."""
+    if shutil.which("mtr") is None:
+        return False
+    try:
+        probe_run = subprocess.run(
+            ["mtr", "--report", "--json", "-c", "1", "127.0.0.1"],
+            capture_output=True, timeout=20,
+        )
+        return probe_run.returncode == 0
+    except Exception:
+        return False
+
+
+MTR_UNUSABLE = not _mtr_usable()
+
+
+@pytest.mark.skipif(MTR_UNUSABLE, reason="mtr cannot run unprivileged here")
 def test_path_localhost():
     result = path.run("127.0.0.1")
     assert result["hops"] >= 1
