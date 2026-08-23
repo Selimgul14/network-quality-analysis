@@ -111,6 +111,29 @@ final class ICMPTests: XCTestCase {
         XCTAssertNil(ICMPPinger.parseReply(bytes, count: bytes.count))
     }
 
+    /// A router that will not answer a ping addressed to itself still has to
+    /// report an expired TTL. The sequence is recovered from the copy of our
+    /// own packet quoted inside the error, which is what ties the reply to
+    /// the request it answers.
+    func testParsesTimeExceededAndRecoversTheQuotedSequence() throws {
+        let data = try fixture("icmp-time-exceeded.bin")
+        let parsed = try XCTUnwrap(ICMPPinger.parseReply([UInt8](data), count: data.count))
+        XCTAssertEqual(parsed.type, 11)
+        XCTAssertEqual(parsed.sequence, 4243)
+    }
+
+    /// A time-exceeded quoting somebody else's traffic is not ours to count.
+    func testIgnoresTimeExceededQuotingANonEchoDatagram() throws {
+        var bytes = [UInt8](try fixture("icmp-time-exceeded.bin"))
+        bytes[48] = 17                                   // quoted protocol is not an echo
+        XCTAssertNil(ICMPPinger.parseReply(bytes, count: bytes.count))
+    }
+
+    func testRejectsTimeExceededTruncatedBeforeTheQuotedHeader() throws {
+        let bytes = [UInt8](try fixture("icmp-time-exceeded.bin"))
+        XCTAssertNil(ICMPPinger.parseReply(bytes, count: 40))
+    }
+
     private func fixture(_ name: String) throws -> Data {
         let url = try XCTUnwrap(Bundle.module.url(forResource: "Fixtures/\(name)",
                                                   withExtension: nil))

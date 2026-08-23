@@ -35,6 +35,7 @@ public enum ICMPPinger {
 
     private static let echoRequest: UInt8 = 8
     private static let echoReply: UInt8 = 0
+    private static let timeExceeded: UInt8 = 11
     private static let payloadSize = 56  // as ping(8) sends
 
     /// Parse one datagram received on a `SOCK_DGRAM` ICMP socket.
@@ -54,20 +55,40 @@ public enum ICMPPinger {
         guard ipHeader >= 20, count >= ipHeader + 8 else { return nil }
 
         let type = buffer[ipHeader]
-        guard type == echoReply else { return nil }
-        let sequence = UInt16(buffer[ipHeader + 6]) << 8 | UInt16(buffer[ipHeader + 7])
-        return ParsedICMP(type: type, sequence: sequence)
+        switch type {
+        case echoReply:
+            let sequence = UInt16(buffer[ipHeader + 6]) << 8 | UInt16(buffer[ipHeader + 7])
+            return ParsedICMP(type: type, sequence: sequence)
+
+        case timeExceeded:
+            // The error body is 8 bytes, then a copy of the datagram that
+            // expired: its own IPv4 header, then the first 8 bytes of our
+            // echo. The sequence lives in that copy.
+            let quoted = ipHeader + 8
+            guard count >= quoted + 20, buffer[quoted] >> 4 == 4 else { return nil }
+            let quotedHeader = Int(buffer[quoted] & 0x0F) * 4
+            let inner = quoted + quotedHeader
+            guard quotedHeader >= 20, count >= inner + 8,
+                  buffer[inner] == echoRequest else { return nil }
+            let sequence = UInt16(buffer[inner + 6]) << 8 | UInt16(buffer[inner + 7])
+            return ParsedICMP(type: type, sequence: sequence)
+
+        default:
+            return nil
+        }
     }
 
     public static func ping(host: String,
                             count: Int = 10,
                             interval: TimeInterval = 0.2,
-                            graceSeconds: TimeInterval = 2.0) async throws -> PingStats.Summary {
+                            graceSeconds: TimeInterval = 2.0,
+                            ttl: Int32? = nil) async throws -> PingStats.Summary {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     continuation.resume(returning: try pingSync(
-                        host: host, count: count, interval: interval, grace: graceSeconds))
+                        host: host, count: count, interval: interval,
+                        grace: graceSeconds, ttl: ttl))
                 } catch {
                     continuation.resume(throwing: error)
                 }
@@ -76,7 +97,7 @@ public enum ICMPPinger {
     }
 
     static func pingSync(host: String, count: Int, interval: TimeInterval,
-                         grace: TimeInterval) throws -> PingStats.Summary {
+                         grace: TimeInterval, ttl: Int32? = nil) throws -> PingStats.Summary {
         guard let address = IPv4Address.resolve(host) else { throw Failure.unresolvable(host) }
 
         let handle = socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP)
@@ -88,6 +109,14 @@ public enum ICMPPinger {
         var window = timeval(tv_sec: 0, tv_usec: 50_000)
         setsockopt(handle, SOL_SOCKET, SO_RCVTIMEO, &window,
                    socklen_t(MemoryLayout<timeval>.size))
+
+        // Rung 2 of the gateway ladder: an echo sent with TTL 1 expires at
+        // the first router, which is obliged to answer with time exceeded
+        // even when it ignores pings addressed to itself.
+        if var hops = ttl {
+            setsockopt(handle, IPPROTO_IP, IP_TTL, &hops,
+                       socklen_t(MemoryLayout<Int32>.size))
+        }
 
         var destination = address.socketAddress
         var sentAt: [UInt16: TimeInterval] = [:]
@@ -155,6 +184,19 @@ public enum ICMPPinger {
         if index < bytes.count { sum &+= UInt32(bytes[index]) << 8 }
         while sum >> 16 != 0 { sum = (sum & 0xFFFF) &+ (sum >> 16) }
         return UInt16(truncatingIfNeeded: ~sum)
+    }
+
+    /// Time the first router by expiring a TTL at it, rather than by
+    /// asking it to answer for itself.
+    ///
+    /// The destination is somewhere beyond the router and is never
+    /// reached; only the router's error reply is timed. `mtr` measures
+    /// hop 1 the same way on the Pi, so both probes end up measuring the
+    /// WiFi link by one method.
+    public static func firstHop(via host: String = "1.1.1.1",
+                                count: Int = 10,
+                                interval: TimeInterval = 0.2) async throws -> PingStats.Summary {
+        try await ping(host: host, count: count, interval: interval, ttl: 1)
     }
 }
 
