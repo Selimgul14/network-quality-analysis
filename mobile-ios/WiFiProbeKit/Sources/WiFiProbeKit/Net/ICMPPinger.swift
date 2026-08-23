@@ -9,8 +9,8 @@ import Darwin
 /// Darwin, which is what makes this possible on an unjailbroken phone at
 /// all. Two consequences of using a datagram socket rather than a raw one:
 /// the kernel rewrites the identifier field, so replies are matched on
-/// sequence number, and the received buffer starts at the ICMP header with
-/// no IP header to skip.
+/// sequence number, and the received buffer carries the IPv4 header ahead
+/// of the ICMP one, so `parseReply` skips it by reading the IHL.
 ///
 /// Timing mirrors `baseline._ping`: packets go out at a fixed interval
 /// while replies are collected as they arrive, rather than waiting for
@@ -26,9 +26,38 @@ public enum ICMPPinger {
         case sendFailed(errno: Int32)
     }
 
+    /// One parsed reply: the ICMP type, and the sequence number that
+    /// identifies which of our packets it answers.
+    public struct ParsedICMP: Equatable, Sendable {
+        public let type: UInt8
+        public let sequence: UInt16
+    }
+
     private static let echoRequest: UInt8 = 8
     private static let echoReply: UInt8 = 0
     private static let payloadSize = 56  // as ping(8) sends
+
+    /// Parse one datagram received on a `SOCK_DGRAM` ICMP socket.
+    ///
+    /// Darwin includes the IPv4 header in what it hands back, unlike
+    /// Linux, so the ICMP header starts at the IHL rather than at byte 0.
+    /// The IHL is read rather than assumed to be 20, because a header
+    /// carrying options is longer and a fixed offset would then land in
+    /// the middle of the ICMP header.
+    ///
+    /// Replies are matched on sequence, not identifier: the kernel owns
+    /// the identifier field on a datagram socket.
+    public static func parseReply(_ buffer: [UInt8], count: Int) -> ParsedICMP? {
+        guard count >= 20, buffer.count >= count else { return nil }
+        guard buffer[0] >> 4 == 4 else { return nil }
+        let ipHeader = Int(buffer[0] & 0x0F) * 4
+        guard ipHeader >= 20, count >= ipHeader + 8 else { return nil }
+
+        let type = buffer[ipHeader]
+        guard type == echoReply else { return nil }
+        let sequence = UInt16(buffer[ipHeader + 6]) << 8 | UInt16(buffer[ipHeader + 7])
+        return ParsedICMP(type: type, sequence: sequence)
+    }
 
     public static func ping(host: String,
                             count: Int = 10,
@@ -69,10 +98,9 @@ public enum ICMPPinger {
             var buffer = [UInt8](repeating: 0, count: 1024)
             while Date().timeIntervalSince1970 < deadline {
                 let received = recv(handle, &buffer, buffer.count, 0)
-                guard received >= 8 else { continue }
-                guard buffer[0] == echoReply else { continue }
-                let sequence = UInt16(buffer[6]) << 8 | UInt16(buffer[7])
-                guard let start = sentAt.removeValue(forKey: sequence) else { continue }
+                guard received > 0,
+                      let parsed = parseReply(buffer, count: received),
+                      let start = sentAt.removeValue(forKey: parsed.sequence) else { continue }
                 rtts.append((Date().timeIntervalSince1970 - start) * 1000)
             }
         }

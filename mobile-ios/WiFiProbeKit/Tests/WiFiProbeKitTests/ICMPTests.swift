@@ -74,4 +74,46 @@ final class ICMPTests: XCTestCase {
         XCTAssertLessThan(summary.rttMs, 500, "first hop RTT of \(summary.rttMs) ms")
         print("WiFi link: \(summary.rttMs) ms, jitter \(summary.jitterMs) ms, loss \(summary.lossPct)%")
     }
+
+    // MARK: reply parsing
+
+    /// The bug this fixture exists for: on Darwin a SOCK_DGRAM ICMP socket
+    /// hands back the IP header as well, so the ICMP type is not at byte 0.
+    /// Reading it there yields 0x45, the version and IHL nibble, and every
+    /// reply is discarded as "not an echo reply".
+    func testParsesEchoReplyPastTheIPHeader() throws {
+        let data = try fixture("icmp-echo-reply.bin")
+        let parsed = try XCTUnwrap(ICMPPinger.parseReply([UInt8](data), count: data.count))
+        XCTAssertEqual(parsed.type, 0)
+        XCTAssertEqual(parsed.sequence, 4242)
+    }
+
+    /// The IHL is read rather than assumed, so a header carrying options is
+    /// still parsed correctly. Built by widening the fixture's header to 24
+    /// bytes and inserting four bytes of IP option padding.
+    func testHonoursAnIPHeaderWithOptions() throws {
+        var bytes = [UInt8](try fixture("icmp-echo-reply.bin"))
+        bytes[0] = 0x46                                  // IHL 6, so 24 bytes
+        bytes.insert(contentsOf: [0x01, 0x01, 0x01, 0x00], at: 20)
+        let parsed = try XCTUnwrap(ICMPPinger.parseReply(bytes, count: bytes.count))
+        XCTAssertEqual(parsed.type, 0)
+        XCTAssertEqual(parsed.sequence, 4242)
+    }
+
+    func testRejectsATruncatedDatagram() {
+        let bytes = [UInt8](repeating: 0x45, count: 12)
+        XCTAssertNil(ICMPPinger.parseReply(bytes, count: bytes.count))
+    }
+
+    func testRejectsANonEchoReply() throws {
+        var bytes = [UInt8](try fixture("icmp-echo-reply.bin"))
+        bytes[20] = 3                                    // destination unreachable
+        XCTAssertNil(ICMPPinger.parseReply(bytes, count: bytes.count))
+    }
+
+    private func fixture(_ name: String) throws -> Data {
+        let url = try XCTUnwrap(Bundle.module.url(forResource: "Fixtures/\(name)",
+                                                  withExtension: nil))
+        return try Data(contentsOf: url)
+    }
 }
