@@ -10,3 +10,6 @@ __pycache__/
 # large reference assets (see reference/README.md)
 reference/content/media/
 reference/content/files/
+
+# subagent-driven-development scratch
+.superpowers/
