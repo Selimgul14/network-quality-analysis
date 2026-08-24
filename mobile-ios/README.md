@@ -92,14 +92,20 @@ Run from a dev Mac, and reassuringly close to the Pi's own figures:
 
 ### Known gaps
 
-- **The WiFi link may not be measurable on every network.** Observed on a
-  campus WLAN, 21 August 2026: the gateway address is correct (the app and
-  iOS Settings agree, and it is on-link), local network permission was
-  granted, and the router still ignores ICMP echo. It also ignores TCP on
-  every candidate port from the dev Mac. Where a router answers nothing,
-  the WiFi link cannot be timed from a phone at all, and the app says so
-  rather than guessing at a cause. This is a finding about managed
-  networks, not a defect.
+- **The 21 August "campus router ignores ICMP" reading was wrong.**
+  Verified on the halls network, 24 August 2026: the router answers ICMP
+  echo, and always did. What looked like silence was a client-side
+  parsing bug in `ICMPPinger.parseReply`: a `SOCK_DGRAM` ICMP socket on
+  Darwin returns the IPv4 header ahead of the ICMP one, and the old code
+  read the type byte at offset 0 instead of skipping that header, so it
+  rejected every real reply and manufactured 100% loss. Fixed in Task 1
+  of the app redesign plan (see `specs/2026-08-24-app-redesign-plan.md`).
+- **A router that answers nothing at all is still a real case, just not
+  this one.** Confirmed 24 August 2026 on a different network
+  (10.224.7.x): echo, a TTL=1 probe, and all four candidate TCP ports
+  returned nothing. The three-rung ladder in `GatewayProbe.swift` (echo,
+  then TTL-expiry, then TCP) exists for that case, and the app reports
+  which rung answered, or that none did, rather than guessing at a cause.
 - **ICMP is structurally tested but has never parsed a real reply.** The
   network used for development filters ICMP, for the system `ping` as
   well as for this code, so both live ping tests skip. The checksum test
