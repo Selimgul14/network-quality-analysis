@@ -105,3 +105,42 @@ public struct StoredRun: Codable, Sendable, Identifiable, Equatable {
             ? String(site.dropFirst(SiteLabel.prefix.count)) : site
     }
 }
+
+public extension StoredRun {
+    /// Build the on-disk record from what a finished run produced.
+    static func from(outcome: RunOutcome,
+                     steps: [RunStep],
+                     verdict: Verdict?) -> StoredRun {
+        StoredRun(
+            id: outcome.runID,
+            site: outcome.site,
+            startedAt: outcome.startedAt,
+            finishedAt: outcome.finishedAt,
+            recordCount: outcome.recordCount,
+            failedCount: outcome.failedCount,
+            gateway: outcome.gateway,
+            wifiLinkMethod: outcome.wifiLinkMethod.rawValue,
+            wifiLinkAttempts: outcome.wifiLinkAttempts.map {
+                Attempt(method: $0.method.rawValue, answered: $0.answered, detail: $0.detail)
+            },
+            steps: steps.map { step in
+                var failure: String?
+                var ok = true
+                if case .failed(let reason) = step.state { failure = reason; ok = false }
+                return Step(workload: step.workload.rawValue,
+                            endpoint: step.endpoint.rawValue,
+                            target: step.target, ok: ok, error: failure)
+            },
+            verdict: verdict.map { verdict in
+                VerdictSnapshot(
+                    score: verdict.health?.score,
+                    quality: verdict.health?.quality,
+                    availabilityPct: verdict.health?.availability?.pct,
+                    label: verdict.health?.label,
+                    headline: verdict.headline,
+                    segments: verdict.segments ?? [:],
+                    wifiLinkRTTms: verdict.wifiLinkRTTms)
+            },
+            downloadMbps: outcome.downloadMbps)
+    }
+}

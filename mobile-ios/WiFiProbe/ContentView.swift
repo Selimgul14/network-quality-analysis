@@ -99,7 +99,8 @@ struct ContentView: View {
                 LabeledContent("WiFi link measured by", value: {
                     switch outcome.wifiLinkMethod {
                     case .icmp: return "ping"
-                    case .tcp: return "TCP (router ignores ping)"
+                    case .firstHopTTL: return "TTL trace (router ignores ping)"
+                    case .tcp: return "TCP (router ignores ping and TTL)"
                     case .none: return "not measurable here"
                     }
                 }())

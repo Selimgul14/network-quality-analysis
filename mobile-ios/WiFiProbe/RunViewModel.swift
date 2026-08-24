@@ -26,8 +26,27 @@ final class RunViewModel {
     private(set) var verdict: Verdict?
     private(set) var verdictProblem: String?
     private(set) var pendingUploads = 0
+    /// The one plain line shown while a run is in progress, instead of
+    /// eleven rows naming workloads and endpoints.
+    private(set) var stageText = ""
+    /// How far through, for the ring. Eleven steps is the usual count;
+    /// the denominator is whatever has been seen so far plus what is
+    /// still expected, so the ring never goes backwards.
+    private(set) var progressFraction: Double = 0
+    /// The run just written to disk.
+    private(set) var savedRun: StoredRun?
 
-    private let store = PendingStore()
+    private static let stageNames: [Workload: String] = [
+        .baseline: "Checking the connection",
+        .path: "Timing your WiFi link",
+        .web: "Loading a web page",
+        .video: "Starting a video",
+        .download: "Testing download speed",
+        .loadlat: "Checking latency under load",
+        .email: "Checking email",
+    ]
+
+    private let store = AppStores.pending
 
     var canRun: Bool {
         SiteLabel.make(from: siteInput) != nil && phase != .running && phase != .fetchingVerdict
@@ -77,6 +96,14 @@ final class RunViewModel {
         phase = .fetchingVerdict
         await fetchVerdict(config: config, site: site, at: result.finishedAt)
         phase = .done
+
+        // Written after the verdict so the stored run carries it. A run
+        // reopened later shows what it showed at the time, which is why
+        // the verdict is snapshotted rather than refetched.
+        let stored = StoredRun.from(outcome: result, steps: steps, verdict: verdict)
+        savedRun = stored
+        try? await AppStores.runs.save(stored)
+        pendingUploads = await store.pendingCount
     }
 
     private func fetchVerdict(config: ProbeConfig, site: String, at: Date) async {
@@ -110,6 +137,9 @@ final class RunViewModel {
         } else {
             steps.append(step)
         }
+        stageText = Self.stageNames[step.workload] ?? step.workload.rawValue
+        let finished = steps.filter { $0.state != .pending && $0.state != .running }.count
+        progressFraction = min(1, Double(finished) / Double(max(steps.count, 11)))
     }
 
     /// M6 disclosure. A run yields one sample per workload and endpoint,

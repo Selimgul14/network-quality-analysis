@@ -126,4 +126,25 @@ final class RunStoreTests: XCTestCase {
         XCTAssertEqual(first.map(\.id), ["bravo", "alpha"])
         XCTAssertEqual(second.map(\.id), ["bravo", "alpha"])
     }
+
+    /// A failed step has to survive into the stored run: the whole point of
+    /// History is being able to look at what went wrong afterwards.
+    func testFactoryCarriesFailedStepsAndTheirReasons() {
+        var step = RunStep(workload: .web, endpoint: .real, target: "https://bbc.co.uk")
+        step.state = .failed("timed out")
+        let outcome = RunOutcome(
+            runID: "r1", site: "phone-home", startedAt: Date(), finishedAt: Date(),
+            recordCount: 1, failedCount: 1, gateway: "10.0.0.1",
+            wifiLinkMethod: .icmp,
+            wifiLinkAttempts: [GatewayProbe.Attempt(method: .icmp, answered: true,
+                                                    detail: "3.2 ms")],
+            gatewaySilentButInternetWorks: false,
+            downloadMbps: 55.4)
+        let stored = StoredRun.from(outcome: outcome, steps: [step], verdict: nil)
+        XCTAssertEqual(stored.steps.count, 1)
+        XCTAssertFalse(stored.steps[0].ok)
+        XCTAssertEqual(stored.steps[0].error, "timed out")
+        XCTAssertEqual(stored.wifiLinkMethod, "icmp")
+        XCTAssertEqual(stored.downloadMbps, 55.4)
+    }
 }

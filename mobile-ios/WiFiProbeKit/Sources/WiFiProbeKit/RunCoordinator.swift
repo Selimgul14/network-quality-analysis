@@ -12,7 +12,7 @@ public struct RunStep: Sendable, Identifiable, Equatable {
     public let target: String
     public var state: RunStepState
 
-    init(workload: Workload, endpoint: Endpoint, target: String) {
+    public init(workload: Workload, endpoint: Endpoint, target: String) {
         self.id = UUID()
         self.workload = workload
         self.endpoint = endpoint
@@ -40,6 +40,28 @@ public struct RunOutcome: Sendable {
     /// a refused local network permission, and a router configured to
     /// answer nothing (observed on a campus WLAN, 21 August 2026).
     public let gatewaySilentButInternetWorks: Bool
+    /// The throughput this run measured, for the on-device chart. The
+    /// verdict does not carry it, so it comes from the run's own record.
+    public let downloadMbps: Double?
+
+    public init(runID: String, site: String, startedAt: Date, finishedAt: Date,
+                recordCount: Int, failedCount: Int, gateway: String?,
+                wifiLinkMethod: GatewayProbe.Method,
+                wifiLinkAttempts: [GatewayProbe.Attempt],
+                gatewaySilentButInternetWorks: Bool,
+                downloadMbps: Double? = nil) {
+        self.runID = runID
+        self.site = site
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.recordCount = recordCount
+        self.failedCount = failedCount
+        self.gateway = gateway
+        self.wifiLinkMethod = wifiLinkMethod
+        self.wifiLinkAttempts = wifiLinkAttempts
+        self.gatewaySilentButInternetWorks = gatewaySilentButInternetWorks
+        self.downloadMbps = downloadMbps
+    }
 }
 
 /// Dispatches one workload against one target. Injectable so the run
@@ -158,6 +180,7 @@ public struct RunCoordinator: Sendable {
         var gatewayAttempts: [GatewayProbe.Attempt] = []
         var gatewaySilent = false
         var offSiteReachable = false
+        var downloadMbps: Double?
 
         if let gateway {
             var step = RunStep(workload: .baseline, endpoint: .local, target: gateway)
@@ -233,6 +256,10 @@ public struct RunCoordinator: Sendable {
                 progress(step)
                 do {
                     let metrics = try await runner(workload, target.endpoint, target.url)
+                    if workload == .download,
+                       case .number(let mbps)? = metrics["throughput_mbps"] {
+                        downloadMbps = mbps
+                    }
                     await emit(step, metrics, nil)
                 } catch {
                     await emit(step, nil, error)
@@ -251,7 +278,8 @@ public struct RunCoordinator: Sendable {
             recordCount: produced, failedCount: failed, gateway: gateway,
             wifiLinkMethod: gatewayMethod,
             wifiLinkAttempts: gatewayAttempts,
-            gatewaySilentButInternetWorks: gatewaySilent && offSiteReachable)
+            gatewaySilentButInternetWorks: gatewaySilent && offSiteReachable,
+            downloadMbps: downloadMbps)
     }
 
     /// Dispatches to the real workload modules. Exhaustive on purpose: a

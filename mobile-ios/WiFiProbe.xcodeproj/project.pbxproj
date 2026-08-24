@@ -13,6 +13,7 @@
 		AA0000000000000000000008 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000007 /* AppConfig.swift */; };
 		AA000000000000000000000A /* WebHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000009 /* WebHost.swift */; };
 		AA000000000000000000001E /* WiFiProbeKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000001D /* WiFiProbeKit */; };
+		AA000000000000000000001F /* AppStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000021 /* AppStores.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,6 +25,7 @@
 		AA000000000000000000000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA000000000000000000000C /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000010 /* WiFiProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WiFiProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000021 /* AppStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStores.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -54,6 +56,7 @@
 				AA0000000000000000000005 /* RunViewModel.swift */,
 				AA0000000000000000000007 /* AppConfig.swift */,
 				AA0000000000000000000009 /* WebHost.swift */,
+				AA0000000000000000000021 /* AppStores.swift */,
 				AA000000000000000000000B /* Info.plist */,
 				AA000000000000000000000C /* App.xcconfig */,
 			);
@@ -147,6 +150,7 @@
 				AA0000000000000000000006 /* RunViewModel.swift in Sources */,
 				AA0000000000000000000008 /* AppConfig.swift in Sources */,
 				AA000000000000000000000A /* WebHost.swift in Sources */,
+				AA000000000000000000001F /* AppStores.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
