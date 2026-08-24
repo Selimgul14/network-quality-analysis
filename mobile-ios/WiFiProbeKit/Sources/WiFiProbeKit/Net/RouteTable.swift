@@ -143,10 +143,20 @@ public actor GatewayCache {
     private var cached: (address: String, at: Date)?
     private let ttl: TimeInterval = 300
 
+    public init() {}
+
     public func address() throws -> String {
         if let cached, Date().timeIntervalSince(cached.at) < ttl { return cached.address }
         let address = try RouteTable.defaultGateway()
         cached = (address, Date())
         return address
     }
+
+    /// Discard the cached address. Called at the start of every run,
+    /// because the phone may have joined a different network since the
+    /// last one.
+    public func flush() { cached = nil }
+
+    /// For tests.
+    public var isEmpty: Bool { cached == nil }
 }

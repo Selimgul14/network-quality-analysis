@@ -39,6 +39,30 @@ public enum BaselineWorkload {
         metrics["loss_pct"] = .number(summary.lossPct)
         return metrics
     }
+
+    /// The gateway leg, which needs to report which rung of the ladder
+    /// answered as well as the numbers. `run` returns metrics only, and
+    /// the method matters to the screen.
+    public static func runGateway(host: String,
+                                  count: Int = 10,
+                                  interval: TimeInterval = 0.2)
+        async -> (metrics: [String: MetricValue], result: GatewayProbe.Result) {
+        let dns = IPv4Address.resolutionMs(host)
+        let result = await GatewayProbe.measure(host: host, count: count, interval: interval)
+
+        var metrics: [String: MetricValue] = ["dns_ms": .number(dns)]
+        switch result.method {
+        case .tcp: metrics["tcp_mode"] = .number(1)
+        // Marks the RTT as a first-hop TTL measurement rather than a ping
+        // of the router itself, so the two are not silently mixed.
+        case .firstHopTTL: metrics["ttl_mode"] = .number(1)
+        case .icmp, .none: break
+        }
+        metrics["rtt_ms"] = .number(result.summary.rttMs)
+        metrics["jitter_ms"] = .number(result.summary.jitterMs)
+        metrics["loss_pct"] = .number(result.summary.lossPct)
+        return (metrics, result)
+    }
 }
 
 /// The WiFi-link leg (M10).

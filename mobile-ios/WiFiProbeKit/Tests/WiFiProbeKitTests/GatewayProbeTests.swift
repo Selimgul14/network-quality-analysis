@@ -85,15 +85,93 @@ final class LocalSubnetTests: XCTestCase {
 
     /// Refusals from off-link addresses must be discarded even though the
     /// probe reports a timing for them.
+    ///
+    /// Driven by an injected probe rather than the real network: this is
+    /// about the trust rule, not about how a particular network happens to
+    /// treat reserved address space. On some networks a connection to
+    /// 192.0.2.1 (TEST-NET-1) refuses in a few milliseconds; on others it
+    /// times out instead, which made this test flaky when it drove the
+    /// real stack.
     func testOffLinkRefusalIsNotAcceptedAsAnAnswer() async {
         let port = await GatewayProbe.respondingPort(
-            host: "192.0.2.1", ports: [80], onLink: { _ in false })
+            host: "192.0.2.1", ports: [80], onLink: { _ in false },
+            probe: { _, _ in .refused(4.85) })
         XCTAssertNil(port)
     }
 
     func testOnLinkRefusalIsAcceptedAsAnAnswer() async {
         let port = await GatewayProbe.respondingPort(
-            host: "192.0.2.1", ports: [80], onLink: { _ in true })
+            host: "192.0.2.1", ports: [80], onLink: { _ in true },
+            probe: { _, _ in .refused(4.85) })
         XCTAssertEqual(port, 80, "a refusal from an on-link host is a real round trip")
+    }
+}
+
+// MARK: the ladder, with no network
+
+private extension GatewayProbe.Probes {
+    /// Every rung silent unless a test replaces one.
+    static func silent() -> GatewayProbe.Probes {
+        GatewayProbe.Probes(
+            echo: { _, count, _ in PingStats.summarise(rtts: [], sent: count) },
+            firstHopTTL: { _, count, _ in PingStats.summarise(rtts: [], sent: count) },
+            tcpPort: { _ in nil },
+            tcp: { _, _, count, _ in PingStats.summarise(rtts: [], sent: count) })
+    }
+}
+
+final class GatewayLadderTests: XCTestCase {
+
+    func testEchoWinsWhenTheRouterAnswersIt() async {
+        var probes = GatewayProbe.Probes.silent()
+        probes.echo = { _, count, _ in PingStats.summarise(rtts: [3.2, 3.4, 3.1], sent: count) }
+        let result = await GatewayProbe.measure(host: "10.0.0.1", count: 3,
+                                                interval: 0, probes: probes)
+        XCTAssertEqual(result.method, .icmp)
+        XCTAssertEqual(result.attempts.count, 1, "later rungs must not run once one answers")
+    }
+
+    func testFallsThroughToTTLWhenEchoIsIgnored() async {
+        var probes = GatewayProbe.Probes.silent()
+        probes.firstHopTTL = { _, count, _ in PingStats.summarise(rtts: [4.0, 4.2], sent: count) }
+        let result = await GatewayProbe.measure(host: "10.0.0.1", count: 2,
+                                                interval: 0, probes: probes)
+        XCTAssertEqual(result.method, .firstHopTTL)
+        XCTAssertEqual(result.attempts.map(\.method), [.icmp, .firstHopTTL])
+    }
+
+    func testFallsThroughToTCPWhenNeitherICMPRungAnswers() async {
+        var probes = GatewayProbe.Probes.silent()
+        probes.tcpPort = { _ in 80 }
+        probes.tcp = { _, _, count, _ in PingStats.summarise(rtts: [6.1], sent: count) }
+        let result = await GatewayProbe.measure(host: "10.0.0.1", count: 1,
+                                                interval: 0, probes: probes)
+        XCTAssertEqual(result.method, .tcp)
+        XCTAssertEqual(result.port, 80)
+        XCTAssertEqual(result.attempts.map(\.method), [.icmp, .firstHopTTL, .tcp])
+    }
+
+    /// Total silence has to stay distinguishable from a measurement, and the
+    /// app has to be able to say what it tried rather than offer the user a
+    /// choice of two explanations.
+    func testTotalSilenceRecordsEveryRungItTried() async {
+        let result = await GatewayProbe.measure(host: "10.0.0.1", count: 4,
+                                                interval: 0, probes: .silent())
+        XCTAssertEqual(result.method, GatewayProbe.Method.none)
+        XCTAssertEqual(result.summary.lossPct, 100)
+        XCTAssertEqual(result.attempts.count, 3)
+        XCTAssertTrue(result.attempts.allSatisfy { !$0.answered })
+    }
+
+    /// A rung that throws is a rung that did not answer, not a crash.
+    func testAThrowingRungIsTreatedAsSilence() async {
+        struct Boom: Error {}
+        var probes = GatewayProbe.Probes.silent()
+        probes.echo = { _, _, _ in throw Boom() }
+        probes.firstHopTTL = { _, count, _ in PingStats.summarise(rtts: [5.0], sent: count) }
+        let result = await GatewayProbe.measure(host: "10.0.0.1", count: 1,
+                                                interval: 0, probes: probes)
+        XCTAssertEqual(result.method, .firstHopTTL)
+        XCTAssertFalse(result.attempts[0].answered)
     }
 }

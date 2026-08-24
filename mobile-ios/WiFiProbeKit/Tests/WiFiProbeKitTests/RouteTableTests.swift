@@ -58,6 +58,17 @@ final class RouteTableTests: XCTestCase {
         }
         XCTAssertTrue(gateway.split(separator: ".").count == 4, "not a dotted quad: \(gateway)")
     }
+
+    /// A five-minute cache on a value that changes the moment the phone joins
+    /// a different network is a bug waiting for a demo, so every run starts
+    /// by discarding it.
+    func testFlushDiscardsTheCachedGateway() async throws {
+        let cache = GatewayCache()
+        _ = try? await cache.address()
+        await cache.flush()
+        let flushed = await cache.isEmpty
+        XCTAssertTrue(flushed)
+    }
 }
 
 #if os(macOS)

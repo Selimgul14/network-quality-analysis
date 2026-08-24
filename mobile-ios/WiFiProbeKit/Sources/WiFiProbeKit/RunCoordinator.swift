@@ -32,6 +32,9 @@ public struct RunOutcome: Sendable {
     /// How the WiFi link was measured, if at all: by ICMP echo, by TCP
     /// once the router ignored echo, or not at all.
     public let wifiLinkMethod: GatewayProbe.Method
+    /// Every rung of the ladder that was tried, in order, so the screen
+    /// can show what happened instead of guessing between two causes.
+    public let wifiLinkAttempts: [GatewayProbe.Attempt]
     /// Total silence from the gateway while off-site targets answered.
     /// Two causes look identical from here and neither may be asserted:
     /// a refused local network permission, and a router configured to
@@ -49,6 +52,15 @@ public typealias WorkloadRunner =
 public typealias BaselineRunner =
     @Sendable (BaselineTarget) async throws -> [String: MetricValue]
 
+/// The gateway leg, which needs the ladder's verdict as well as its
+/// numbers. Injectable for the same reason `baselineRunner` is: so the
+/// coordinator's plumbing (one gateway measurement, reused by the path
+/// record) can be tested without a router, rather than only through
+/// `BaselineWorkload.runGateway`'s live network calls.
+public typealias GatewayRunner =
+    @Sendable (String, Int, TimeInterval) async -> (metrics: [String: MetricValue],
+                                                     result: GatewayProbe.Result)
+
 /// Builds records and sequences a run, mirroring `probe/scheduler.py`.
 ///
 /// One `run_id` per tap, as `run_heavy` uses one per cycle. Workloads run
@@ -62,6 +74,7 @@ public struct RunCoordinator: Sendable {
     private let store: PendingStore
     private let runner: WorkloadRunner
     private let baselineRunner: BaselineRunner
+    private let gatewayRunner: GatewayRunner
     private let gatewayLookup: @Sendable () async -> String?
     private let settleSeconds: TimeInterval
     private let netHash: @Sendable () async -> String?
@@ -71,6 +84,9 @@ public struct RunCoordinator: Sendable {
                 store: PendingStore,
                 runner: @escaping WorkloadRunner = RunCoordinator.liveRunner,
                 baselineRunner: BaselineRunner? = nil,
+                gatewayRunner: @escaping GatewayRunner = { host, count, interval in
+                    await BaselineWorkload.runGateway(host: host, count: count, interval: interval)
+                },
                 gatewayLookup: @escaping @Sendable () async -> String? = {
                     try? await GatewayCache.shared.address()
                 },
@@ -88,6 +104,7 @@ public struct RunCoordinator: Sendable {
             try await BaselineWorkload.run(target: target, count: pingCount,
                                            interval: pingInterval)
         }
+        self.gatewayRunner = gatewayRunner
         self.gatewayLookup = gatewayLookup
         self.netHash = netHash
         self.settleSeconds = settleSeconds
@@ -129,14 +146,40 @@ public struct RunCoordinator: Sendable {
             produced += 1
         }
 
-        // 1. Baseline across every destination class, in parallel as
-        //    `run_baseline` does: five sequential runs would not fit.
+        // 1. The gateway leg on its own, before the parallel group: it
+        //    needs the ladder's verdict as well as its numbers, and it
+        //    feeds the path record below. Flushed first because the phone
+        //    may have joined a different network since the last run.
+        await GatewayCache.shared.flush()
         let gateway = await gatewayLookup()
-        let baselineTargets = Endpoints.baselineTargets(config: config, gateway: gateway)
+
         var gatewayRTT: Double?
         var gatewayMethod: GatewayProbe.Method = .none
+        var gatewayAttempts: [GatewayProbe.Attempt] = []
         var gatewaySilent = false
         var offSiteReachable = false
+
+        if let gateway {
+            var step = RunStep(workload: .baseline, endpoint: .local, target: gateway)
+            step.state = .running
+            progress(step)
+            let (metrics, result) = await gatewayRunner(gateway, config.pingCount,
+                                                         config.pingInterval)
+            gatewayMethod = result.method
+            gatewayAttempts = result.attempts
+            if result.summary.lossPct >= 100 {
+                gatewaySilent = true
+            } else {
+                gatewayRTT = result.summary.rttMs
+            }
+            await emit(step, metrics, nil)
+        }
+
+        // 2. Baseline across every off-site destination class, in
+        //    parallel as `run_baseline` does: four sequential runs would
+        //    not fit. The gateway is excluded here since it was just
+        //    measured above.
+        let baselineTargets = Endpoints.baselineTargets(config: config, gateway: nil)
 
         await withTaskGroup(of: (BaselineTarget, Result<[String: MetricValue], Error>).self) { group in
             for target in baselineTargets {
@@ -156,28 +199,17 @@ public struct RunCoordinator: Sendable {
                 progress(step)
                 switch result {
                 case .success(let metrics):
-                    if case .number(let loss)? = metrics["loss_pct"] {
-                        if target.endpoint == .local {
-                            if loss >= 100 {
-                                gatewaySilent = true
-                            } else if case .number(let rtt)? = metrics["rtt_ms"] {
-                                gatewayRTT = rtt
-                                // tcp_mode is set only when the fallback ran.
-                                gatewayMethod = metrics["tcp_mode"] != nil ? .tcp : .icmp
-                            }
-                        } else if loss < 100 {
-                            offSiteReachable = true
-                        }
+                    if case .number(let loss)? = metrics["loss_pct"], loss < 100 {
+                        offSiteReachable = true
                     }
                     await emit(step, metrics, nil)
                 case .failure(let error):
-                    if target.endpoint == .local { gatewaySilent = true }
                     await emit(step, nil, error)
                 }
             }
         }
 
-        // 2. The WiFi-link record (M10). Reuses the gateway RTT just
+        // 3. The WiFi-link record (M10). Reuses the gateway RTT just
         //    measured rather than pinging the router twice.
         if let gateway {
             var step = RunStep(workload: .path, endpoint: .local, target: gateway)
@@ -192,7 +224,7 @@ public struct RunCoordinator: Sendable {
 
         await uploader.drain(store)
 
-        // 3. Application workloads, sequential, saturating ones last.
+        // 4. Application workloads, sequential, saturating ones last.
         for workload in Self.applicationOrder {
             for target in Endpoints.targets(for: workload, config: config) {
                 var step = RunStep(workload: workload, endpoint: target.endpoint,
@@ -218,6 +250,7 @@ public struct RunCoordinator: Sendable {
             runID: runID, site: site, startedAt: startedAt, finishedAt: Date(),
             recordCount: produced, failedCount: failed, gateway: gateway,
             wifiLinkMethod: gatewayMethod,
+            wifiLinkAttempts: gatewayAttempts,
             gatewaySilentButInternetWorks: gatewaySilent && offSiteReachable)
     }
 

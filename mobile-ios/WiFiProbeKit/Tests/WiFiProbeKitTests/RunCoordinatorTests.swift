@@ -30,6 +30,12 @@ final class RunCoordinatorTests: XCTestCase {
             realDownload: URL(string: "http://example.com/50MB.zip")!)
     }
 
+    /// `gatewayLoss: 100` simulates the gateway leg answering nothing (the
+    /// ladder exhausted all three rungs); anything less simulates rung 1
+    /// (echo) answering. Since Task 3, the gateway is measured once before
+    /// the baseline group through an injected `gatewayRunner`, not through
+    /// `baselineRunner`, so this stub never touches the real ladder or the
+    /// real network: see the report's "gatewayRunner" note for why.
     private func coordinator(
         gateway: String? = "192.168.1.1",
         gatewayLoss: Double = 0,
@@ -48,9 +54,24 @@ final class RunCoordinatorTests: XCTestCase {
                 return ["stub_ms": .number(1)]
             },
             baselineRunner: { target in
-                let loss = target.endpoint == .local ? gatewayLoss : offSiteLoss
-                return ["dns_ms": .number(1), "rtt_ms": .number(4.2),
-                        "jitter_ms": .number(0.3), "loss_pct": .number(loss)]
+                ["dns_ms": .number(1), "rtt_ms": .number(4.2),
+                 "jitter_ms": .number(0.3), "loss_pct": .number(offSiteLoss)]
+            },
+            gatewayRunner: { _, _, _ in
+                let answered = gatewayLoss < 100
+                let summary = PingStats.Summary(rttMs: answered ? 4.2 : 0,
+                                                jitterMs: answered ? 0.3 : 0,
+                                                lossPct: gatewayLoss)
+                let attempt = GatewayProbe.Attempt(
+                    method: answered ? .icmp : .tcp, answered: answered,
+                    detail: answered ? "4.2 ms" : "no candidate port answered")
+                let result = GatewayProbe.Result(summary: summary,
+                                                 method: answered ? .icmp : .none,
+                                                 port: nil, attempts: [attempt])
+                let metrics: [String: MetricValue] = [
+                    "dns_ms": .number(1), "rtt_ms": .number(summary.rttMs),
+                    "jitter_ms": .number(summary.jitterMs), "loss_pct": .number(summary.lossPct)]
+                return (metrics, result)
             },
             gatewayLookup: { gateway },
             netHash: { "abc123def456" },
@@ -132,6 +153,20 @@ final class RunCoordinatorTests: XCTestCase {
         XCTAssertEqual(path.metrics, ["first_hop_rtt_ms": .number(4.2)])
         // `hops` would assert something false about the path.
         XCTAssertNil(path.metrics["hops"])
+    }
+
+    /// The gateway is measured once, and the path record reuses that
+    /// number rather than pinging the router a second time. Guards
+    /// against a regression where the gateway leaked back into the
+    /// parallel baseline group as well as the dedicated pre-group step,
+    /// which `testRunCoversEveryWorkloadAndEndpointPair` could not catch
+    /// since it collapses duplicates into a Set.
+    func testGatewayIsMeasuredOnceAndReusedByThePathRecord() async throws {
+        _ = await coordinator().run(site: "phone-test") { _ in }
+        let gatewayBaselines = await records().filter {
+            $0.workload == .baseline && $0.endpoint == .local
+        }
+        XCTAssertEqual(gatewayBaselines.count, 1)
     }
 
     func testNoGatewayMeansNoPathRecord() async {
