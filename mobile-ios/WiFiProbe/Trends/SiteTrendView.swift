@@ -33,12 +33,12 @@ struct SiteTrendView: View {
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
 
-                if points.count < 2 {
-                    Text("One run so far. Test this network again and a line appears.")
+                if points.count >= 2 {
+                    chart
+                } else if let message = statusMessage {
+                    Text(message)
                         .font(.footnote).foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, minHeight: 120)
-                } else {
-                    chart
                 }
             }
 
@@ -64,8 +64,61 @@ struct SiteTrendView: View {
                 .interpolationMethod(.monotone)
             PointMark(x: .value("When", point.date), y: .value(metric.title, point.value))
         }
+        .chartYScale(domain: yDomain)
         .chartYAxisLabel(metric.unit)
         .frame(height: 180)
         .padding(.vertical, 6)
+    }
+
+    /// The y axis range for the current metric.
+    ///
+    /// Left to auto-scale, Swift Charts fits tightly to the data, so a
+    /// score that only ever moves between 88 and 92 draws as a cliff.
+    /// Score has a true range (0 to 100), so that is fixed. Speed and
+    /// WiFi link have no natural ceiling, so they are anchored at zero
+    /// instead, so the drawn height of a line is proportional to the
+    /// quantity rather than to how much the sample happened to vary.
+    /// Either way the domain grows past its floor rather than clipping a
+    /// value that exceeds it.
+    private var yDomain: ClosedRange<Double> {
+        let maxValue = points.map(\.value).max() ?? 0
+        switch metric {
+        case .score: return 0...max(100, maxValue)
+        case .download, .latency: return 0...max(1, maxValue)
+        }
+    }
+
+    /// A plain-English name for what a metric measures, used in status
+    /// text rather than the raw enum case or the terse chart title.
+    private func metricNoun(_ metric: Trends.Metric) -> String {
+        switch metric {
+        case .score: return "a score"
+        case .download: return "a speed reading"
+        case .latency: return "a WiFi link reading"
+        }
+    }
+
+    /// What to show instead of the chart when there are fewer than two
+    /// points to draw a line between.
+    ///
+    /// `points` only counts runs that reported this particular metric,
+    /// while `runs` is every run this site has. Those two counts can
+    /// disagree badly: a site can have ten runs and zero scored points
+    /// if the phone's summary fetch failed on every one of them, and
+    /// "test again" is not the fix for that.
+    private var statusMessage: String? {
+        if runs.isEmpty {
+            // Still loading, or truly nothing yet either way: say
+            // nothing rather than guess.
+            return nil
+        }
+        if points.isEmpty {
+            return "These runs did not record \(metricNoun(metric))."
+        }
+        if runs.count == 1 {
+            return "One run so far. Test this network again and a line appears."
+        }
+        return "Only one of these runs recorded \(metricNoun(metric)). "
+            + "Test this network again and a line appears."
     }
 }

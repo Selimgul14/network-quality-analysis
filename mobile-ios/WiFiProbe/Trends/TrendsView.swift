@@ -54,8 +54,8 @@ struct TrendsView: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(.systemGray5))
                     Capsule().fill(colour(summary.medianScore))
-                        .frame(width: geometry.size.width
-                               * ((summary.medianScore ?? 0) / 100))
+                        .frame(width: barWidth(summary.medianScore,
+                                                totalWidth: geometry.size.width))
                 }
             }
             .frame(height: 8)
@@ -63,6 +63,22 @@ struct TrendsView: View {
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 3)
+    }
+
+    /// Width of the ranking bar's coloured fill.
+    ///
+    /// A nil score (never measured) draws no fill, leaving only the grey
+    /// track. A real score is clamped to the track (a score above 100
+    /// should not run past the row edge) and always draws at least a
+    /// small stub, even at zero. Without that floor a network that is
+    /// completely down and a network that was never measured both draw
+    /// as an empty bar, and the ranking's whole point is spotting the
+    /// dead one at a glance.
+    private func barWidth(_ score: Double?, totalWidth: CGFloat) -> CGFloat {
+        guard let score else { return 0 }
+        let fraction = min(1, max(0, score / 100))
+        let minimumStub: CGFloat = 6
+        return max(minimumStub, totalWidth * fraction)
     }
 
     private func colour(_ score: Double?) -> Color {
