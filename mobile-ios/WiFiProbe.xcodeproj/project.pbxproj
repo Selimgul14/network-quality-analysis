@@ -21,6 +21,7 @@
 		AA000000000000000000002F /* RunDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000002E /* RunDetailView.swift */; };
 		AA0000000000000000000031 /* TrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000030 /* TrendsView.swift */; };
 		AA0000000000000000000033 /* SiteTrendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000032 /* SiteTrendView.swift */; };
+		AA0000000000000000000036 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000035 /* SettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -40,6 +41,7 @@
 		AA000000000000000000002E /* RunDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunDetailView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000030 /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
 		AA0000000000000000000032 /* SiteTrendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SiteTrendView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000035 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -71,6 +73,7 @@
 				AA0000000000000000000007 /* AppConfig.swift */,
 				AA0000000000000000000009 /* WebHost.swift */,
 				AA0000000000000000000021 /* AppStores.swift */,
+				AA0000000000000000000035 /* SettingsView.swift */,
 				AA000000000000000000002A /* Now */,
 				AA000000000000000000002B /* History */,
 				AA0000000000000000000034 /* Trends */,
@@ -203,6 +206,7 @@
 				AA000000000000000000002F /* RunDetailView.swift in Sources */,
 				AA0000000000000000000031 /* TrendsView.swift in Sources */,
 				AA0000000000000000000033 /* SiteTrendView.swift in Sources */,
+				AA0000000000000000000036 /* SettingsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

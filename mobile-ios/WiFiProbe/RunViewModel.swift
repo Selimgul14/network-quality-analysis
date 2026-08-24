@@ -43,6 +43,14 @@ final class RunViewModel {
     /// gateway lookup resolves, before any step), so `progressFraction`
     /// has nothing meaningful to report before that beyond its initial 0.
     private var plannedSteps: Int?
+    /// R6: `pendingUploads` used to be sampled three times, all at or
+    /// after `coordinator.run()` returned, so a queue that filled and
+    /// drained mid-run (the exact case the interruption test watches for)
+    /// was invisible between those samples. This task re-reads the store
+    /// every couple of seconds for as long as a run is in progress or
+    /// something is still queued, and stops itself otherwise, so nothing
+    /// polls while the screen is idle.
+    private var pendingWatch: Task<Void, Never>?
 
     private static let stageNames: [Workload: String] = [
         .baseline: "Checking the connection",
@@ -84,6 +92,7 @@ final class RunViewModel {
         // previous run's dial score and tint underneath the error text.
         savedRun = nil
         phase = .running
+        startPendingWatch()
 
         let config: ProbeConfig
         do {
@@ -152,6 +161,24 @@ final class RunViewModel {
             // Never invent a verdict: say it could not be read.
             verdictProblem = "Measurements uploaded, but the verdict could not be read: "
                 + "\(error)"
+        }
+    }
+
+    /// R6, part 2. Runs on the main actor (this class is `@MainActor`, and
+    /// a plain `Task {}` created here inherits that), so assigning
+    /// `pendingUploads` needs no hop back. Stops itself once nothing is
+    /// queued and no run is in progress, rather than running forever.
+    private func startPendingWatch() {
+        pendingWatch?.cancel()
+        pendingWatch = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                let count = await self.store.pendingCount
+                guard !Task.isCancelled else { return }
+                self.pendingUploads = count
+                let runInProgress = self.phase == .running || self.phase == .fetchingVerdict
+                if count == 0 && !runInProgress { return }
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
         }
     }
 

@@ -12,6 +12,7 @@ struct NowView: View {
     @State private var lastRun: StoredRun?
     @State private var showingDetail = false
     @State private var showingSteps = false
+    @State private var showingSettings = false
 
     var body: some View {
         NavigationStack {
@@ -34,6 +35,7 @@ struct NowView: View {
                     if let warning = wifiLinkWarning { note(warning, .orange) }
                     runButton
                     if model.phase == .done { detailLink }
+                    if model.pendingUploads > 0 { pendingNote }
                     if model.phase == .running || model.phase == .fetchingVerdict {
                         stepDisclosure
                     }
@@ -42,6 +44,14 @@ struct NowView: View {
             }
             .navigationTitle("This network")
             .background(WebHostView().frame(width: 1, height: 1).opacity(0.01))
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingSettings = true } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
+            .sheet(isPresented: $showingSettings) { SettingsView() }
             .task {
                 knownSites = await AppStores.runs.sites()
                 lastRun = await AppStores.runs.all().first
@@ -132,6 +142,20 @@ struct NowView: View {
     private var detailLink: some View {
         Button("See the numbers") { showingDetail = true }
             .font(.subheadline)
+    }
+
+    /// R6: this reads `model.pendingUploads`, an `@Observable` property
+    /// that `RunViewModel` now keeps fresh with a background watch rather
+    /// than a single sample, so this line updates on its own while a run
+    /// is interrupted and drains once the network returns. No polling
+    /// lives in the view.
+    private var pendingNote: some View {
+        HStack(spacing: 6) {
+            ProgressView().controlSize(.mini)
+            Text("Waiting to upload: \(model.pendingUploads)")
+        }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
     }
 
     private var stepDisclosure: some View {

@@ -170,19 +170,20 @@ Rules:
 dashboard password are all dev-grade and were pasted in chat. Rotating
 them is a separate pre-existing task and is not in scope here.
 
-## C6. Time budget is hard
+### C6. The dissertation outranks this work
 
-CA3 is due 11 September 2026 and is 70% of the module. Fault injection
-(build step 7) is still outstanding and Chapter 4 is blocked on it.
+The three working day cap was lifted on 23 August 2026 at the user's
+explicit instruction. It is replaced by a stopping condition rather than
+a number:
 
-Budget: **three working days, end to end.** If the app is not
-demonstrable by then, it stops and becomes a design-only section in the
-dissertation. That is a real outcome, not a failure: the two-tier
-architecture argument, the parity table and the ethics analysis are worth
-writing whether or not the code runs.
+> The app is finished when the three tabs work and the WiFi link is
+> measured. Nothing beyond that is built before the dissertation is
+> written.
 
-Fault injection and the dissertation take priority over every feature in
-`REQUIREMENTS.md`, including the required ones.
+CA3 is due 11 September 2026 and Chapter 4 is not written. The sequencing
+agreed on 23 August is app, then fault injection, then writing, which
+puts two build tasks in front of a 50 page document. Writing therefore
+proceeds in parallel rather than afterwards.
 
 ## C7. Platform limits are accepted, not worked around
 

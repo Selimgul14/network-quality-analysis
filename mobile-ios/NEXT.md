@@ -4,10 +4,12 @@ Two tasks remain before the iOS work is done. Both need the phone in
 hand, which is why they are parked rather than finished. Everything else
 is built, tested and committed.
 
-State at the pause (21 August 2026): 89 tests passing, the app builds and
-runs on a real iPhone, records reach the live backend, and the verdict
-comes back from the server. Work sits on branch `mobile-ios-probe`,
-commits `cd1aa1f` and `f561b7f`.
+State at the pause (24 August 2026): 141 tests passing (1 skipped), the
+app builds and runs on a real iPhone, records reach the live backend, and
+the verdict comes back from the server. The app is now three tabs (Now,
+History, Trends) plus Settings, with runs kept on the device across
+launches, and the pending-upload queue survives the app being killed
+(MS1). The app redesign branch is merged into `main`.
 
 ---
 
@@ -22,60 +24,67 @@ score read "excellent" during a real outage.
 
 1. Run with a label like `interrupt`.
 2. Wait about 20 seconds, until `web` or `video` has ticked over.
-3. Turn airplane mode **on** for roughly 15 seconds, then **off**.
-4. Restore it before the run ends, or the verdict fetch fails too and the
-   interesting part is hidden behind a connection error.
-5. Let it finish and reassociate.
+3. Turn airplane mode **on**, and leave it on until the run has finished
+   (the app reports done, or fails outright). Do not restore it early.
+   `RunCoordinator` calls `uploader.drain(store)` after the baseline and
+   gateway group, and again after every application workload, so a
+   mid-run outage that is lifted before the run ends can drain itself
+   before anyone looks and the queue may already be empty by the time
+   the screen is checked. Restoring early hides the exact thing this
+   test exists to show.
+4. Once the run has finished (or failed), turn airplane mode **off** and
+   watch the Now screen.
 
 **What should happen**
 
 | Expected | What it proves |
 |---|---|
 | Some rows go red with an error beneath them | M8: failed runs became records rather than being skipped |
-| "Waiting to upload" goes non-zero, then clears | M9: nothing was dropped while the network was gone |
+| "Waiting to upload" appears on the Now screen while offline, stays non-zero, then clears once connectivity returns | M9: nothing was dropped while the network was gone, and the count is watched live rather than sampled once (R6, Task 11) |
 | The verdict reports **under 100% of tasks completed** | Availability seeing a phone outage the way it now sees the Pi's |
 
 **A healthy score with no availability warning despite red rows is a
 bug**, and the same class as the one the outage replay exposed on the
 server. Report it rather than working around it.
 
+As a second pass, kill the app outright (swipe it away, not just
+background it) while "Waiting to upload" is non-zero, then relaunch.
+MS1 means the queue should still be there and should still drain; if it
+is not, the persistent buffer is not doing what it claims.
+
 ## 2. Screenshots for Chapter 4
 
 After a clean run, capture on the phone:
 
-- the app showing its verdict, and
+- the Now screen showing its verdict,
+- `RunDetailView` for that run (History tab), and
 - Safari at `/overview?site=phone-<label>&hours=1`.
 
 Same score, same headline, same three lights, from one scoring
-implementation through two unrelated clients. That single image carries
-the whole two-tier argument, and it is far easier to take while the app
-is fresh on the device than to recreate later.
+implementation through two unrelated clients, plus the on-device detail
+view that backs it up. That set of images carries the whole two-tier
+argument, and it is far easier to take while the app is fresh on the
+device than to recreate later.
 
 ---
 
 ## Open questions
 
-- **What did "WiFi link measured by" report on a good run**: `ping`,
-  `TCP (router ignores ping)`, or `not measurable here`? It decides
-  whether the campus-router limitation goes into Chapter 3 as a finding.
-  A managed router that answers neither ICMP nor TCP would mean the WiFi
-  link is simply not measurable from a phone there, which is a result
-  about managed networks rather than a defect.
 - **`phone-smoke-test`**: one row written from the dev Mac on 21 August to
   prove the backend accepts this client's JSON (see `RUNS.md`). Delete it
   or leave it? There is no delete endpoint, so removing it means SQL
-  against Postgres.
-- **Merge the branch.** `git checkout main && git merge --ff-only
-  mobile-ios-probe`. The CA3 deliverable is this tree, so it should not
-  sit unmerged.
+  against Postgres. Still unresolved.
 
 ## Not in scope, and deliberately
 
-MS1 persistent buffer, MS3 background runs, MS4 SSID labelling. All
-stretch, none earns a mark, and C6 caps this work at three days against
-roughly one used. After the two tasks above, the app is done and
-attention goes to **fault injection (build step 7)**, which is the last
-piece of project work blocking Chapter 4.
+MS3 background runs, MS4 SSID labelling, the fixed-probe overlay on the
+Trends chart (designed, deferred inside Task 10 because it is the only
+part of the tab that needs signal and credentials). None of these earn a
+mark. C6's cap is now a stopping condition rather than a day count: the
+app is finished when the three tabs work and the WiFi link is measured,
+and both hold. After the two tasks above, attention goes to **fault
+injection (build step 7)**, which is the last piece of project work
+blocking Chapter 4.
 
 ## Also still open, outside this folder
 

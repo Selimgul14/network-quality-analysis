@@ -55,11 +55,17 @@ segment lights, and per-workload values against their thresholds. No
 thresholds, no scoring and no attribution logic in Swift. This is the
 point of the whole design and is not negotiable for convenience.
 
-**M7. One screen.**
-Site label field, a Run button, per-workload progress while running, the
-verdict when it returns, and a plain list of what was posted. No tab bar,
-no settings screen, no history browser. The web dashboard already does
-history and is already responsive.
+**M7. One primary screen, superseded 24 August 2026 by the app redesign
+plan.**
+The original scope was a single screen: a site label field, a Run
+button, per-workload progress, the verdict, and a plain list of what was
+posted, explicitly with no tab bar, no settings screen and no history
+browser, on the grounds that the web dashboard already covers history and
+is already responsive. What was actually built is a three-tab app (Now,
+History, Trends) with on-device run storage and a Settings screen: see
+M11 and Task 8 of `specs/2026-08-24-app-redesign-plan.md` for why that
+line moved. Now still carries everything M7 originally asked for; it is
+one tab of three rather than the whole app.
 
 **M8. Record failures as data, not as nothing.**
 A workload that fails posts `ok: false` with the error string and empty
@@ -98,10 +104,23 @@ So the app must:
    Every other `path` metric is omitted, `hops` included, since claiming
    a one-hop path would be false.
 
+**M11. History and Trends, kept on the device.**
+Every finished run is written to an on-device store and stays there:
+`HistoryView` lists past runs, `RunDetailView` reopens one with the
+full evidence it was saved with, and `TrendsView` ranks the networks the
+phone has seen. Satisfied by Tasks 4, 6, 9 and 10 of the app redesign
+plan.
+
 ## Stretch, in priority order
 
-**MS1. Persistent buffer.** Records survive the app being closed, giving
-true parity with the probe's SQLite buffer.
+**MS1. Persistent buffer. Done, delivered by Task 5 of the app redesign
+plan.** Records survive the app being closed, giving true parity with
+the probe's SQLite buffer. It arrived as a consequence of the run store
+built for M11 rather than being built for its own sake: once `RunStore`
+(Task 4) proved that a disk-backed store works, `PendingStore` grew the
+same `directory: URL?` initialiser
+(`Sources/WiFiProbeKit/PendingStore.swift`), so the upload queue now
+survives the app being killed too.
 
 **MS2. Promoted to M10 on 21 August 2026.** Number retained rather than
 reused so earlier references stay valid.
@@ -159,20 +178,21 @@ The `context` row is a result, not a gap to apologise for. A phone is a
 worse instrument than a Pi in a specific, describable way, and describing
 it is part of the contribution.
 
-## Build status, 21 August 2026
+## Build status, 24 August 2026
 
 | | Requirement | State |
 |---|---|---|
 | M1 | Five workloads on the device | Built and tested. Web, video, download and bufferbloat verified against live endpoints; see `README.md` for the numbers. |
 | M2 | Same endpoint families as the Pi | Built and tested. |
 | M3 | Records validate against the contract | Built. The validator runs before every post, and the coordinator test asserts it for every record a run produces. |
-| M4 | Upload to the existing `/ingest` | Built and tested against a stubbed backend. The live token was confirmed to be the one the deployed API accepts. No record has been posted yet. |
+| M4 | Upload to the existing `/ingest` | Built and tested against a stubbed backend. The live token was confirmed to be the one the deployed API accepts. |
 | M5 | Unambiguous phone identity | Built and tested: the `phone-` prefix is applied by the app and an empty label is refused. |
-| M6 | Show the backend's verdict | Client built. Blocked on `DASH_PASS`, which exists only in Azure App Service settings, so `/summary` currently returns 401. |
-| M7 | One screen | Not started; needs the app target. |
+| M6 | Show the backend's verdict | Client built. Blocked on `DASH_PASS`, which exists only in Azure App Service settings, so `/summary` currently returns 401 until it is filled in. |
+| M7 | One primary screen | Superseded; see M7's own entry above and M11 below. The Now tab still carries everything it originally asked for. |
 | M8 | Failures recorded as data | Built and tested. |
-| M9 | No records lost to a bad network | Built and tested: an unreachable backend leaves every record pending. |
-| M10 | Measure the WiFi link | Built. Gateway discovery is proven against a real route dump; the ICMP leg has never parsed a live reply, because the development network filters ICMP. Unproven until it runs on a phone. |
+| M9 | No records lost to a bad network | Built and tested: an unreachable backend leaves every record pending, and the queue is now watched live on the Now screen rather than sampled once (see the controller ruling in `specs/2026-08-24-app-redesign-plan.md`, Task 11). |
+| M10 | Measure the WiFi link | Built and corrected. The 21 August "unproven, development network filters ICMP" reading was itself wrong: the halls router answers ICMP echo in about 3.2 ms and always did. A `SOCK_DGRAM` ICMP socket on Darwin delivers the IPv4 header ahead of the ICMP one, and the app was parsing the reply at the wrong offset, manufacturing 100% loss on every host. Fixed in Task 1 of the app redesign plan. The WiFi link is now measured by a three-rung ladder (ICMP echo, then a TTL-limited probe timing the time-exceeded reply, then TCP connect-or-refusal on an on-link address), and the app reports which rung answered, including the real case where none does (confirmed 24 August on 10.224.7.x). |
+| M11 | History and Trends, kept on the device | Built and tested. `HistoryView`, `RunDetailView` and `TrendsView` over an on-device `RunStore`. |
 
 ## Definition of done
 
@@ -196,7 +216,8 @@ out of scope by default.
    connectivity returns, and the resulting summary reports reduced
    availability rather than a healthy score.
 7. `git status` in `src/` shows changes only under `src/mobile-ios/`.
-8. The three-day budget in C6 was not exceeded.
+8. The stopping condition in C6 is met: the three tabs work and the WiFi
+   link is measured.
 
 ## Resolved design questions
 

@@ -3,9 +3,11 @@
 An iOS draft that runs the project's measurement workloads on a phone and
 reports them through the existing cloud backend, unchanged.
 
-**Status (21 August 2026): builds and runs. 80 tests passing (2 skipped),
-the iOS app launches in the simulator, and the live backend has accepted a
-record from this client.**
+**Status (24 August 2026): builds and runs. 141 tests passing (1
+skipped), the iOS app launches in the simulator and on a physical iPhone,
+and the live backend has accepted a record from this client. The app is
+now three tabs (Now, History, Trends) plus Settings, with runs kept on
+the device, and the WiFi link is measured for real: see Known gaps.**
 
 ## Why this exists
 
@@ -49,18 +51,19 @@ implementations of the scoring.
 | Piece | State |
 |---|---|
 | `WiFiProbeKit` package: contract, config, endpoints | built, tested |
-| ICMP pinger, TCP probe, gateway probe, route table, HTTP streamer, net hash | built; ICMP replies unvalidated (see below) |
+| ICMP pinger, TTL-limited probe, TCP probe, gateway ladder, route table, HTTP streamer, net hash | built, tested; ICMP now confirmed against a real reply (see below) |
 | Workloads: web, video, download, bufferbloat, baseline, path (M10) | built, tested |
-| Pending store, uploader, run coordinator, summary client | built, tested |
-| iOS app target: Xcode project, Info.plist, the one screen | built; launches in the simulator |
+| Pending store (survives the app being killed, MS1), uploader, run coordinator, summary client | built, tested |
+| Run store, per-site trend ranking | built, tested |
+| iOS app: three tabs (Now, History, Trends) plus Settings | built; launches in the simulator and on a physical iPhone |
 | A record accepted by the live `/ingest` | **done**, 201 from the deployed API |
-| A full run from a physical iPhone | **not yet**: needs sideloading, and `DASH_PASS` for the verdict |
+| A full run from a physical iPhone | done for the app itself; the interruption test and Chapter 4 screenshots are still parked in `NEXT.md` |
 
 Toolchain: Swift 6.2.3, Xcode 26.2, iOS 17 deployment target, no
 third-party packages (N10).
 
 ```
-cd WiFiProbeKit && swift test        # 80 tests, no device needed
+cd WiFiProbeKit && swift test        # 141 tests, 1 skipped, no device needed
 
 xcodebuild -project WiFiProbe.xcodeproj -scheme WiFiProbe \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
@@ -92,36 +95,57 @@ Run from a dev Mac, and reassuringly close to the Pi's own figures:
 
 ### Known gaps
 
-- **The 21 August "campus router ignores ICMP" reading was wrong.**
-  Verified on the halls network, 24 August 2026: the router answers ICMP
-  echo, and always did. What looked like silence was a client-side
-  parsing bug in `ICMPPinger.parseReply`: a `SOCK_DGRAM` ICMP socket on
-  Darwin returns the IPv4 header ahead of the ICMP one, and the old code
-  read the type byte at offset 0 instead of skipping that header, so it
-  rejected every real reply and manufactured 100% loss. Fixed in Task 1
-  of the app redesign plan (see `specs/2026-08-24-app-redesign-plan.md`).
-- **A router that answers nothing at all is still a real case, just not
-  this one.** Confirmed 24 August 2026 on a different network
-  (10.224.7.x): echo, a TTL=1 probe, and all four candidate TCP ports
-  returned nothing. The three-rung ladder in `GatewayProbe.swift` (echo,
-  then TTL-expiry, then TCP) exists for that case, and the app reports
-  which rung answered, or that none did, rather than guessing at a cause.
-- **ICMP is structurally tested but has never parsed a real reply.** The
-  network used for development filters ICMP, for the system `ping` as
-  well as for this code, so both live ping tests skip. The checksum test
-  is the meaningful one (it verifies to zero, which is what a receiver
-  checks), but the gateway ping, and therefore the whole WiFi-link
-  segment, is unproven until it runs on the phone.
+- **The WiFi link was never measured, and the network was never the
+  reason.** The 21 August "campus router ignores ICMP, unproven until it
+  runs on a phone" reading was wrong. Verified on the halls network,
+  24 August 2026: the router answers ICMP echo in about 3.2 ms, and
+  always did. What looked like silence was a client-side parsing bug in
+  `ICMPPinger.parseReply`: a `SOCK_DGRAM` ICMP socket on Darwin returns
+  the IPv4 header ahead of the ICMP one, and the old code read the type
+  byte at offset 0 instead of skipping that header, so it rejected every
+  real reply and manufactured 100% loss on every host, on every network,
+  including the working one. Fixed in Task 1 of the app redesign plan
+  (see `specs/2026-08-24-app-redesign-plan.md`).
+- **The WiFi link is now measured by a three-rung ladder**
+  (`GatewayProbe.swift`): ICMP echo first; if that gets nothing, a
+  TTL-limited probe whose time-exceeded reply times the first hop, the
+  same method `mtr` uses for hop 1 on the Pi; if that also gets nothing,
+  TCP connect-or-refusal on an on-link candidate address. The app reports
+  which rung answered, so a result is never silently guessed at.
+- **A router that answers nothing at all is a real case, not a
+  hypothetical one.** Confirmed 24 August 2026 on a different network
+  (10.224.7.x): echo, the TTL-limited probe, and all four candidate TCP
+  ports each returned nothing. The ladder exists for exactly this, and
+  reports "none" rather than inventing a number.
 - **`DASH_PASS` is empty** in `Secrets.xcconfig`. It exists only in Azure
   App Service settings. Until it is filled, `GET /summary` returns 401
   and M6 cannot be demonstrated.
+
+### The three tabs
+
+- **Now** is the original one-screen design (M1-M6, M8-M10): pick a
+  network, run it, see the score, the headline and the three segment
+  lights. It also shows "Waiting to upload" whenever the pending queue is
+  non-zero, kept live by a background watch rather than a single sample
+  (see the controller ruling recorded against Task 11 in
+  `specs/2026-08-24-app-redesign-plan.md`).
+- **History** lists every run kept on the device; tapping one opens
+  `RunDetailView`, the full evidence a run was saved with, including the
+  WiFi-link ladder's attempts.
+- **Trends** ranks the networks the phone has seen by median score, with
+  a per-site chart over score, download and latency (`SiteTrendView`).
+- **Settings** (reached from the gear icon on Now) shows the probe id,
+  how many runs are kept, the pending-upload count, the site prefix, and
+  a destructive "delete all local runs" action that is explicit about
+  only touching the phone's own copy: uploaded records stay on the
+  server, since there is no delete endpoint.
 
 ## Documents
 
 Read in this order. Both are binding, not background.
 
 1. `CONSTRAINTS.md` — what must not be touched, and why. Read first.
-2. `REQUIREMENTS.md` — numbered requirements M1-M9, stretch, explicit
+2. `REQUIREMENTS.md`: numbered requirements M1-M11, stretch, explicit
    non-requirements, the measurement parity table, and the definition of
    done.
 3. `DESIGN.md` — how the requirements are met, plus an as-built section
