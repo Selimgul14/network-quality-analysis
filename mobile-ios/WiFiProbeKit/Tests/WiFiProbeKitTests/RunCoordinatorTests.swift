@@ -286,11 +286,16 @@ final class RunCoordinatorTests: XCTestCase {
                        RunCoordinator.plannedStepCount(config: config, gatewayFound: false))
     }
 
-    /// Fed the finished-step counts in the order a real run reports
-    /// them (rising by exactly one at a time, planned total fixed),
-    /// the fraction must never fall back and never exceed 1. This is
-    /// the regression test for the bug: a denominator that moved with
-    /// `steps.count` let the fraction reach 1 early, then retreat.
+    /// A sanity check on the pure function alone: fed an increasing
+    /// `finished` against a fixed `planned`, it never falls back and
+    /// never exceeds 1, ending at exactly 1. This is close to
+    /// definitional for `min(1, finished / planned)` and would not by
+    /// itself have caught the original bug, which lived in
+    /// `RunViewModel.apply`'s old `max(steps.count, 11)` denominator, a
+    /// different formula entirely. The actual regression coverage for
+    /// that bug is `testPlanCallbackFiresOnceBeforeAnyProgressWithGateway`
+    /// and its no-gateway counterpart below, which pin down the fixed
+    /// planned total this function is fed in the real app.
     func testProgressFractionIsMonotonicAcrossARun() {
         let planned = RunCoordinator.plannedStepCount(config: config, gatewayFound: true)
         var previous = 0.0
@@ -301,5 +306,51 @@ final class RunCoordinatorTests: XCTestCase {
             previous = fraction
         }
         XCTAssertEqual(previous, 1)
+    }
+
+    // MARK: the plan callback
+    //
+    // RunViewModel used to infer whether a gateway was found by checking
+    // the first step's endpoint against .local: correct today, but only
+    // because of two invariants enforced by nothing but a comment (the
+    // gateway leg runs before the parallel baseline group, and no other
+    // target is ever .local). The plan callback reports run(site:)'s own
+    // `gateway != nil` directly, so the caller no longer has to
+    // reconstruct it.
+
+    /// Must fire exactly once, before any `progress` callback, and with
+    /// the same total the run goes on to produce.
+    func testPlanCallbackFiresOnceBeforeAnyProgressWithGateway() async {
+        var plannedValues: [Int] = []
+        var progressCalls = 0
+        let outcome = await coordinator().run(
+            site: "phone-test",
+            plan: { planned in
+                XCTAssertEqual(progressCalls, 0,
+                               "plan must fire before the first progress callback")
+                plannedValues.append(planned)
+            }
+        ) { _ in
+            progressCalls += 1
+        }
+        XCTAssertEqual(plannedValues, [outcome.recordCount])
+    }
+
+    /// Same guarantee with no gateway found, where the planned total is
+    /// two lower (no gateway baseline step, no path record).
+    func testPlanCallbackFiresOnceBeforeAnyProgressWithoutGateway() async {
+        var plannedValues: [Int] = []
+        var progressCalls = 0
+        let outcome = await coordinator(gateway: nil).run(
+            site: "phone-test",
+            plan: { planned in
+                XCTAssertEqual(progressCalls, 0,
+                               "plan must fire before the first progress callback")
+                plannedValues.append(planned)
+            }
+        ) { _ in
+            progressCalls += 1
+        }
+        XCTAssertEqual(plannedValues, [outcome.recordCount])
     }
 }

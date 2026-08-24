@@ -177,6 +177,7 @@ public struct RunCoordinator: Sendable {
     }
 
     public func run(site: String,
+                    plan: (@Sendable (Int) -> Void)? = nil,
                     progress: @Sendable @escaping (RunStep) -> Void) async -> RunOutcome {
         let runID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
         let startedAt = Date()
@@ -213,6 +214,13 @@ public struct RunCoordinator: Sendable {
         //    may have joined a different network since the last run.
         await GatewayCache.shared.flush()
         let gateway = await gatewayLookup()
+
+        // Reported before any step: whether a gateway address was found
+        // is known now, and the caller should not have to infer it later
+        // from which endpoint happens to arrive first (see Task 7's fix
+        // round 2: that inference was correct but only by construction of
+        // the ordering below, not guaranteed by anything).
+        plan?(Self.plannedStepCount(config: config, gatewayFound: gateway != nil))
 
         var gatewayRTT: Double?
         var gatewayMethod: GatewayProbe.Method = .none

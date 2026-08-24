@@ -30,18 +30,18 @@ final class RunViewModel {
     /// eleven rows naming workloads and endpoints.
     private(set) var stageText = ""
     /// How far through, for the ring. The denominator is the number of
-    /// steps this run will actually produce
-    /// (`RunCoordinator.plannedStepCount`), worked out once the first
-    /// step arrives and held fixed for the rest of the run, so the
+    /// steps this run will actually produce, reported by
+    /// `RunCoordinator.run`'s `plan` callback right after the gateway
+    /// lookup resolves and held fixed for the rest of the run, so the
     /// fraction only rises as steps finish and never falls back the way
     /// dividing by the live `steps.count` did.
     private(set) var progressFraction: Double = 0
     /// The run just written to disk.
     private(set) var savedRun: StoredRun?
-    /// The planned total for the run in progress. Nil until the first
-    /// step callback resolves it (the gateway lookup has finished by
-    /// then), so `progressFraction` has nothing meaningful to report
-    /// before that first callback beyond its initial 0.
+    /// The planned total for the run in progress. Nil until
+    /// `RunCoordinator.run`'s `plan` callback fires (right after the
+    /// gateway lookup resolves, before any step), so `progressFraction`
+    /// has nothing meaningful to report before that beyond its initial 0.
     private var plannedSteps: Int?
 
     private static let stageNames: [Workload: String] = [
@@ -90,8 +90,13 @@ final class RunViewModel {
             store: store,
             runner: RunCoordinator.liveRunner(webHost: { WebHost.shared.view }))
 
-        let result = await coordinator.run(site: site) { [weak self] step in
-            Task { @MainActor in self?.apply(step, config: config) }
+        let result = await coordinator.run(
+            site: site,
+            plan: { [weak self] planned in
+                Task { @MainActor in self?.plannedSteps = planned }
+            }
+        ) { [weak self] step in
+            Task { @MainActor in self?.apply(step) }
         }
         outcome = result
         pendingUploads = await store.pendingCount
@@ -138,7 +143,7 @@ final class RunViewModel {
         }
     }
 
-    private func apply(_ step: RunStep, config: ProbeConfig) {
+    private func apply(_ step: RunStep) {
         if let index = steps.firstIndex(where: {
             $0.workload == step.workload && $0.endpoint == step.endpoint
                 && $0.target == step.target
@@ -146,17 +151,6 @@ final class RunViewModel {
             steps[index].state = step.state
         } else {
             steps.append(step)
-        }
-        if plannedSteps == nil {
-            // run(site:progress:) reports the gateway leg first, before
-            // anything else, whenever a gateway address was found; the
-            // off-site baseline targets it reports otherwise never carry
-            // the .local endpoint (they are looked up with
-            // baselineTargets(gateway: nil)). So the first step this
-            // view model ever sees tells us which case we are in.
-            let gatewayFound = step.endpoint == .local
-            plannedSteps = RunCoordinator.plannedStepCount(config: config,
-                                                            gatewayFound: gatewayFound)
         }
         stageText = Self.stageNames[step.workload] ?? step.workload.rawValue
         let finished = steps.filter { $0.state != .pending && $0.state != .running }.count
