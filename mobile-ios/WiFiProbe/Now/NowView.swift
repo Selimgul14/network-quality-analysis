@@ -55,6 +55,11 @@ struct NowView: View {
             .task {
                 knownSites = await AppStores.runs.sites()
                 lastRun = await AppStores.runs.all().first
+                // A queue can be left over from before launch (app killed
+                // with something still pending). Sample it now, try a
+                // drain, and start the live watch if anything remains,
+                // rather than leaving the screen silent until a new run.
+                await model.checkPendingOnLaunch()
             }
             .navigationDestination(isPresented: $showingDetail) {
                 if let run = model.savedRun { RunDetailView(run: run) }

@@ -182,6 +182,32 @@ final class RunViewModel {
         }
     }
 
+    /// Called once when the Now screen appears. A queue can be left over
+    /// from before launch, the second-pass durability check in
+    /// `NEXT.md`: kill the app while something is queued, relaunch, and
+    /// the durable store (MS1) still has it. Without this,
+    /// `pendingUploads` starts at 0 and nothing samples the real count
+    /// until a new run starts `startPendingWatch()`, so a leftover queue
+    /// is invisible at exactly the moment it matters.
+    ///
+    /// `AppConfig.load`'s `site` argument is only stamped onto records
+    /// created from here on; `Uploader` reads just `ingestURL` and
+    /// `ingestToken`, and every already-queued record already carries
+    /// its own `site` from when it was produced, so a placeholder site
+    /// is safe for a drain attempt and does not touch what gets posted.
+    func checkPendingOnLaunch() async {
+        let count = await store.pendingCount
+        guard count > 0 else { return }
+        pendingUploads = count
+        if let config = try? AppConfig.load(site: "startup-flush") {
+            await Uploader(config: config).drain(store)
+        }
+        // Whether or not the drain above cleared it, the watch takes
+        // over from here: it re-reads the real count and stops itself
+        // once empty.
+        startPendingWatch()
+    }
+
     private func apply(_ step: RunStep) {
         if let index = steps.firstIndex(where: {
             $0.workload == step.workload && $0.endpoint == step.endpoint

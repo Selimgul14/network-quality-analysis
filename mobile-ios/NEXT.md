@@ -24,16 +24,29 @@ score read "excellent" during a real outage.
 
 1. Run with a label like `interrupt`.
 2. Wait about 20 seconds, until `web` or `video` has ticked over.
-3. Turn airplane mode **on**, and leave it on until the run has finished
-   (the app reports done, or fails outright). Do not restore it early.
-   `RunCoordinator` calls `uploader.drain(store)` after the baseline and
-   gateway group, and again after every application workload, so a
-   mid-run outage that is lifted before the run ends can drain itself
-   before anyone looks and the queue may already be empty by the time
-   the screen is checked. Restoring early hides the exact thing this
-   test exists to show.
-4. Once the run has finished (or failed), turn airplane mode **off** and
-   watch the Now screen.
+3. Turn airplane mode **on**, and leave it on through the rest of the
+   workload sequence. Do not restore it yet. `RunCoordinator` calls
+   `uploader.drain(store)` after the baseline and gateway group, and
+   again after every application workload, so a mid-run outage that is
+   lifted before the sequence ends can drain itself before anyone looks
+   and the queue may already be empty by the time the screen is checked.
+   Restoring early hides the exact thing this test exists to show.
+4. Turn airplane mode **off** as soon as every row in "What it is doing"
+   shows a checkmark or a red X, with none still spinning, that is, the
+   moment the workload sequence itself finishes. Do not wait for the
+   headline below the dial to say "Reading the verdict": by the time
+   that text appears, `RunViewModel.run()` has already made its one
+   extra attempt to flush anything still queued ("anything still queued
+   is retried before the verdict is read"), and nothing retries it again
+   automatically after that, so restoring only once you see that text is
+   one retry too late, and the count will sit stuck non-zero instead of
+   clearing. Restoring as soon as the steps finish gives WiFi a couple of
+   seconds to reassociate before that retry and before the verdict fetch
+   both need it. Restore too late in the other direction and you
+   reproduce the failure this step used to warn about, before this
+   rewrite: the verdict fetch itself goes out while still offline, throws,
+   the verdict stays unread, and the headline falls back to "Measured"
+   with the interesting part hidden behind a connection error.
 
 **What should happen**
 
@@ -48,9 +61,14 @@ bug**, and the same class as the one the outage replay exposed on the
 server. Report it rather than working around it.
 
 As a second pass, kill the app outright (swipe it away, not just
-background it) while "Waiting to upload" is non-zero, then relaunch.
-MS1 means the queue should still be there and should still drain; if it
-is not, the persistent buffer is not doing what it claims.
+background it) while "Waiting to upload" is non-zero, then relaunch with
+airplane mode still on. "Waiting to upload" should appear on the Now
+screen as soon as it opens, without starting a new run: relaunch also
+tries a drain on its own, so with airplane mode still on the count
+should hold rather than clear. Then restore connectivity and confirm it
+drains from there. MS1 means the queue survives the kill; if the count
+does not appear at launch or does not drain once connectivity is back,
+the persistent buffer is not doing what it claims.
 
 ## 2. Screenshots for Chapter 4
 

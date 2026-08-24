@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var pending = 0
     @State private var runCount = 0
     @State private var confirmingWipe = false
+    @State private var deleteError: String?
 
     var body: some View {
         NavigationStack {
@@ -21,6 +22,9 @@ struct SettingsView: View {
                 Section {
                     Button("Delete all local runs", role: .destructive) {
                         confirmingWipe = true
+                    }
+                    if let deleteError {
+                        Text(deleteError).font(.footnote).foregroundStyle(.red)
                     }
                 } footer: {
                     // Uploaded records are the backend's, and there is no
@@ -45,15 +49,33 @@ struct SettingsView: View {
                 }
             }
             .task {
-                pending = await AppStores.pending.pendingCount
-                runCount = await AppStores.runs.all().count
+                // A single snapshot goes stale while the sheet is open:
+                // the gear is reachable mid-run, and the pending count on
+                // Now is now live (R6). Loop instead of sampling once;
+                // SwiftUI cancels this task on its own when the sheet is
+                // dismissed, so nothing needs to stop it by hand.
+                while !Task.isCancelled {
+                    pending = await AppStores.pending.pendingCount
+                    runCount = await AppStores.runs.all().count
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                }
             }
             .alert("Delete all runs?", isPresented: $confirmingWipe) {
                 Button("Cancel", role: .cancel) {}
                 Button("Delete", role: .destructive) {
                     Task {
-                        try? await AppStores.runs.deleteAll()
-                        runCount = 0
+                        do {
+                            try await AppStores.runs.deleteAll()
+                            deleteError = nil
+                        } catch {
+                            // Do not claim success `runCount = 0` would
+                            // imply. Show what actually happened and let
+                            // the count below reflect what is really on
+                            // disk after the attempt.
+                            deleteError = "Could not delete every run: "
+                                + error.localizedDescription
+                        }
+                        runCount = await AppStores.runs.all().count
                     }
                 }
             } message: {
