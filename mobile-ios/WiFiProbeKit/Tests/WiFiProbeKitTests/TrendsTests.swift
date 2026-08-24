@@ -107,4 +107,63 @@ final class TrendsTests: XCTestCase {
         let summary = Trends.rank([run(site: "phone-home", at: Date(), score: 95)])[0]
         XCTAssertNil(Trends.insight(for: summary))
     }
+
+    func testMedianDownloadIsComputedFromDownloadMbps() {
+        let now = Date()
+        let runs = [run(site: "phone-home", at: now, score: 90, download: 10),
+                    run(site: "phone-home", at: now.addingTimeInterval(-60), score: 90, download: 20),
+                    run(site: "phone-home", at: now.addingTimeInterval(-120), score: 90, download: 30),
+                    run(site: "phone-home", at: now.addingTimeInterval(-180), score: 90, download: 40)]
+        XCTAssertEqual(Trends.rank(runs).first?.medianDownloadMbps, 25)
+    }
+
+    func testMedianWiFiLinkIsComputedFromWifiLinkRTTms() {
+        let now = Date()
+        let runs = [run(site: "phone-home", at: now, score: 90, wifiLink: 2),
+                    run(site: "phone-home", at: now.addingTimeInterval(-60), score: 90, wifiLink: 4),
+                    run(site: "phone-home", at: now.addingTimeInterval(-120), score: 90, wifiLink: 6),
+                    run(site: "phone-home", at: now.addingTimeInterval(-180), score: 90, wifiLink: 8)]
+        XCTAssertEqual(Trends.rank(runs).first?.medianWiFiLinkMs, 5)
+    }
+
+    /// Values chosen so a swapped mapping (download landing in the latency
+    /// field or vice versa) fails loudly rather than plausibly.
+    func testDownloadAndWifiLinkLandInTheirOwnFieldsNotSwapped() {
+        let now = Date()
+        let summary = Trends.rank([run(site: "phone-home", at: now, score: 90,
+                                       download: 55.0, wifiLink: 3.8)]).first
+        XCTAssertEqual(summary?.medianDownloadMbps, 55.0)
+        XCTAssertEqual(summary?.medianWiFiLinkMs, 3.8)
+    }
+
+    /// A run missing one of the two metrics is skipped for that field's
+    /// median but still counted toward runCount; a site with no download
+    /// figures at all reports nil, not zero.
+    func testRunsMissingAMetricAreSkippedForThatFieldButStillCounted() {
+        let now = Date()
+        let runs = [run(site: "phone-home", at: now, score: 90, wifiLink: 5),
+                    run(site: "phone-home", at: now.addingTimeInterval(-60), score: 90, wifiLink: 7)]
+        let summary = Trends.rank(runs).first
+        XCTAssertEqual(summary?.runCount, 2)
+        XCTAssertEqual(summary?.medianWiFiLinkMs, 6)
+        XCTAssertNil(summary?.medianDownloadMbps)
+    }
+
+    func testTwoSitesWithNoScoreBothAppearOrderedAlphabetically() {
+        let now = Date()
+        let runs = [run(site: "phone-zebra", at: now, score: nil),
+                    run(site: "phone-alpha", at: now, score: nil)]
+        let ranked = Trends.rank(runs)
+        XCTAssertEqual(ranked.map(\.site), ["phone-alpha", "phone-zebra"])
+    }
+
+    func testTiedMedianScoresBreakAlphabeticallyAndAreStableAcrossCalls() {
+        let now = Date()
+        let runs = [run(site: "phone-zebra", at: now, score: 70),
+                    run(site: "phone-alpha", at: now, score: 70)]
+        let firstCall = Trends.rank(runs).map(\.site)
+        let secondCall = Trends.rank(runs).map(\.site)
+        XCTAssertEqual(firstCall, ["phone-alpha", "phone-zebra"])
+        XCTAssertEqual(secondCall, ["phone-alpha", "phone-zebra"])
+    }
 }
