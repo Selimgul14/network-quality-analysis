@@ -6,7 +6,7 @@ import Foundation
 /// `quality_tier` and the per-hop identity labels, numbers for everything
 /// else. Modelling it as an enum makes an invalid metric unrepresentable
 /// rather than caught later by the validator.
-public enum MetricValue: Encodable, Equatable, Sendable {
+public enum MetricValue: Codable, Equatable, Sendable {
     case number(Double)
     case string(String)
 
@@ -16,6 +16,12 @@ public enum MetricValue: Encodable, Equatable, Sendable {
         case .number(let value): try container.encode(value)
         case .string(let value): try container.encode(value)
         }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let number = try? container.decode(Double.self) { self = .number(number); return }
+        self = .string(try container.decode(String.self))
     }
 }
 

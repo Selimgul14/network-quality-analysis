@@ -6,21 +6,21 @@ import Foundation
 /// (N3) and emits `path` only as a single hop (M10, N4). The contract is
 /// the shared vocabulary; what this client chooses to say with it is a
 /// separate matter.
-public enum Workload: String, CaseIterable, Codable, Sendable {
+public enum Workload: String, CaseIterable, Codable, Sendable, Equatable {
     case web, video, email, download, baseline, path, loadlat
 }
 
 /// Which endpoint family a run hit. `local` is used only for the gateway
 /// leg on this client (M2, M10); the application workloads run against
 /// `cloud` and `real`, as the Pi does at a site with no wired reference.
-public enum Endpoint: String, CaseIterable, Codable, Sendable {
+public enum Endpoint: String, CaseIterable, Codable, Sendable, Equatable {
     case local, cloud, real
 }
 
 /// One measurement record. Field-for-field the contract, including its
 /// snake_case names, which are mapped explicitly below so the mapping is
 /// visible in one place and can be tested.
-public struct Record: Encodable, Sendable {
+public struct Record: Codable, Sendable, Equatable {
     public let ts: Date
     public let probeID: String
     public let site: String?
@@ -89,11 +89,59 @@ public struct Record: Encodable, Sendable {
         try c.encode(netHash, forKey: .netHash)
     }
 
+    /// Written by hand rather than synthesised: the custom `encode(to:)`
+    /// above and `MetricValue`'s manual coding mean the compiler cannot be
+    /// trusted to derive this correctly, so it mirrors `CodingKeys`
+    /// explicitly. `context` and `raw_ref` are always posted as null and
+    /// carry no stored property, so they are decoded and discarded rather
+    /// than assigned; `decodeIfPresent` means an explicit null decodes to
+    /// nil instead of throwing.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let tsString = try c.decode(String.self, forKey: .ts)
+        guard let ts = Self.decodeTimestamp(tsString) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .ts, in: c,
+                debugDescription: "ts is not a valid ISO 8601 timestamp: \(tsString)")
+        }
+        self.ts = ts
+        self.probeID = try c.decode(String.self, forKey: .probeID)
+        self.site = try c.decodeIfPresent(String.self, forKey: .site)
+        self.runID = try c.decode(String.self, forKey: .runID)
+        self.workload = try c.decode(Workload.self, forKey: .workload)
+        self.endpoint = try c.decode(Endpoint.self, forKey: .endpoint)
+        self.target = try c.decode(String.self, forKey: .target)
+        self.ok = try c.decode(Bool.self, forKey: .ok)
+        self.error = try c.decodeIfPresent(String.self, forKey: .error)
+        self.metrics = try c.decode([String: MetricValue].self, forKey: .metrics)
+        self.netHash = try c.decodeIfPresent(String.self, forKey: .netHash)
+        _ = try c.decodeIfPresent(String.self, forKey: .context)
+        _ = try c.decodeIfPresent(String.self, forKey: .rawRef)
+    }
+
     static let timestampFormatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
     }()
+
+    /// `timestampFormatter` is strict on decode: a timestamp with no
+    /// fractional part (`...T22:14:20Z`, no `.123`) is rejected outright
+    /// even though it is valid ISO 8601. `PendingStore.load` drops its
+    /// entire queue on a decode failure, so one whole-second timestamp
+    /// would silently discard every unsent record. Encoding always emits
+    /// fractional seconds (see `encode(to:)`); this only needs to tolerate
+    /// reading a form the encoder itself does not produce, in case a
+    /// queue file was written by different code or a future format.
+    private static let wholeSecondFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
+    static func decodeTimestamp(_ string: String) -> Date? {
+        timestampFormatter.date(from: string) ?? wholeSecondFormatter.date(from: string)
+    }
 
     public func encoded() throws -> Data {
         let encoder = JSONEncoder()

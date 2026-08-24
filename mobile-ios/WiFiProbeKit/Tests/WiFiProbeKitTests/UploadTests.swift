@@ -167,6 +167,101 @@ final class UploadTests: XCTestCase {
     }
 }
 
+extension UploadTests {
+    /// The upload fails precisely when the network is worst, which is when
+    /// the measurement matters most. If the app is killed while the queue is
+    /// full, the queue has to still be there afterwards.
+    func testQueuedRecordsSurviveANewStoreOverTheSameDirectory() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pending-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = PendingStore(directory: directory)
+        await first.add(sampleRecord())
+        await first.add(sampleRecord())
+        var count = await first.pendingCount
+        XCTAssertEqual(count, 2)
+
+        let reopened = PendingStore(directory: directory)
+        count = await reopened.pendingCount
+        XCTAssertEqual(count, 2, "the queue did not survive")
+
+        let entries = await reopened.take()
+        await reopened.acknowledge(entries[0].id)
+        let afterAck = PendingStore(directory: directory)
+        count = await afterAck.pendingCount
+        XCTAssertEqual(count, 1, "an acknowledged record came back")
+    }
+
+    /// Order is preserved across a restart, so a partial upload still leaves
+    /// a contiguous prefix delivered.
+    func testQueueOrderSurvivesARestart() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("pending-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let first = PendingStore(directory: directory)
+        for _ in 0..<3 { await first.add(sampleRecord()) }
+        let before = await first.take().map(\.id)
+        let after = await PendingStore(directory: directory).take().map(\.id)
+        XCTAssertEqual(before, after)
+    }
+}
+
+final class RecordDecodingTests: XCTestCase {
+    /// `Record.timestampFormatter` is strict on decode: a timestamp with no
+    /// fractional part is rejected even though it is valid ISO 8601. A
+    /// queue file written before this project always adds fractional
+    /// seconds could still contain one, and `PendingStore.load` drops its
+    /// entire queue on a single decode failure, so this must not throw.
+    func testWholeSecondTimestampDecodes() throws {
+        let json = """
+        {"ts":"2026-08-24T22:14:20Z","probe_id":"p","site":null,"run_id":"r",
+         "workload":"baseline","endpoint":"real","target":"1.1.1.1","ok":true,
+         "error":null,"metrics":{},"context":null,"raw_ref":null,"net_hash":null}
+        """
+        let record = try JSONDecoder().decode(Record.self, from: Data(json.utf8))
+        XCTAssertEqual(record.probeID, "p")
+        let expected = ISO8601DateFormatter().date(from: "2026-08-24T22:14:20Z")
+        XCTAssertEqual(record.ts, expected)
+    }
+
+    /// A queue entry decoded back from disk must re-encode to exactly the
+    /// same JSON it started as: the backend validates against the
+    /// read-only contract schema, and a mismatch here would mean ingestion
+    /// silently breaks the moment a record survives a restart.
+    func testDecodedRecordReencodesToTheSameJSON() throws {
+        let original = sampleRecord()
+        let encoded = try original.encoded()
+        let decoded = try JSONDecoder().decode(Record.self, from: encoded)
+        let reencoded = try decoded.encoded()
+
+        let originalObject = try JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+        let reencodedObject = try JSONSerialization.jsonObject(with: reencoded) as? [String: Any]
+        XCTAssertEqual(NSDictionary(dictionary: originalObject ?? [:]),
+                       NSDictionary(dictionary: reencodedObject ?? [:]))
+    }
+
+    /// The contract's 13 keys, nulls included, must survive the round
+    /// trip through `Decodable` unchanged: `Codable` conformance must not
+    /// have altered what gets encoded.
+    func testEncodedKeySetStillMatchesContractAfterAddingDecodable() throws {
+        let json = try sampleRecord().jsonObject()
+        XCTAssertEqual(Set(json.keys), Set(ContractValidator.allowedKeys))
+        XCTAssertTrue(json["context"] is NSNull)
+        XCTAssertTrue(json["raw_ref"] is NSNull)
+    }
+}
+
+private func sampleRecord() -> Record {
+    Record(probeID: "iphone-test", site: "phone-home",
+           runID: UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+           workload: .baseline, endpoint: .real, target: "1.1.1.1",
+           ok: true, error: nil,
+           metrics: ["rtt_ms": .number(13.9), "loss_pct": .number(0)],
+           netHash: nil)
+}
+
 final class NetIDTests: XCTestCase {
     /// Never the raw address: a truncated SHA-256, as `netid.py` stores.
     func testHashIsTruncatedAndNotTheAddress() {
