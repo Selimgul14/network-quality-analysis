@@ -17,10 +17,27 @@ public actor RunStore {
     public init(directory: URL) {
         self.directory = directory
         encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
+        // Plain .iso8601 truncates to whole seconds, which manufactures
+        // ties between runs that finished a few hundred milliseconds
+        // apart. Record.timestampFormatter keeps fractional seconds and
+        // is already what the wire format uses, so store and upload
+        // agree on precision. Encode and decode must stay symmetric.
+        encoder.dateEncodingStrategy = .custom { date, encoder in
+            var container = encoder.singleValueContainer()
+            try container.encode(Record.timestampFormatter.string(from: date))
+        }
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let raw = try container.decode(String.self)
+            guard let date = Record.timestampFormatter.date(from: raw) else {
+                throw DecodingError.dataCorruptedError(
+                    in: container,
+                    debugDescription: "Not a fractional-second ISO 8601 date: \(raw)")
+            }
+            return date
+        }
     }
 
     /// Application Support, which is backed up and not purged under disk
@@ -40,7 +57,10 @@ public actor RunStore {
     }
 
     /// Newest first, which is the order History shows and the order the
-    /// charts want.
+    /// charts want. `id` is a secondary key so the order is total: two
+    /// runs with a genuinely identical `finishedAt` still come back in
+    /// the same order every time, rather than falling back to directory
+    /// enumeration order, which Apple does not document as stable.
     public func all() -> [StoredRun] {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: nil)) ?? []
@@ -50,7 +70,9 @@ public actor RunStore {
                 guard let data = try? Data(contentsOf: url) else { return nil }
                 return try? decoder.decode(StoredRun.self, from: data)
             }
-            .sorted { $0.finishedAt > $1.finishedAt }
+            .sorted {
+                $0.finishedAt == $1.finishedAt ? $0.id > $1.id : $0.finishedAt > $1.finishedAt
+            }
     }
 
     public func runs(site: String) -> [StoredRun] {

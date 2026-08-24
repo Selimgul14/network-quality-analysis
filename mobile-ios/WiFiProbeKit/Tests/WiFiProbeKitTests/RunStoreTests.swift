@@ -91,4 +91,39 @@ final class RunStoreTests: XCTestCase {
         let reopened = await RunStore(directory: directory).all()
         XCTAssertEqual(reopened.map(\.id), ["a"])
     }
+
+    /// Plain `.iso8601` truncates to whole seconds, so two runs a few
+    /// hundred milliseconds apart would collapse to the same `finishedAt`
+    /// on a round trip through disk. Both timestamps here sit in the same
+    /// whole second (.100 and .400) so this fails against whole-second
+    /// encoding: the runs would tie, and the order and distinct
+    /// timestamps this test asserts would not survive.
+    func testSubSecondTimestampsSurviveSaveAndReload() async throws {
+        let store = RunStore(directory: directory)
+        let base = Date(timeIntervalSince1970: 1_700_000_000.100)
+        try await store.save(run(id: "earlier", site: "phone-home", at: base))
+        try await store.save(run(id: "later", site: "phone-home",
+                                 at: base.addingTimeInterval(0.3)))
+        let all = await store.all()
+        XCTAssertEqual(all.map(\.id), ["later", "earlier"])
+        XCTAssertNotEqual(all[0].finishedAt, all[1].finishedAt)
+        XCTAssertEqual(all[0].finishedAt.timeIntervalSince(all[1].finishedAt),
+                       0.3, accuracy: 0.01)
+    }
+
+    /// Two runs that genuinely finished at the same instant must still
+    /// come back in a fixed order rather than whatever order the
+    /// filesystem happens to enumerate in. Checked across two separate
+    /// `RunStore` instances so the ordering is re-derived from disk each
+    /// time, not cached from the first read.
+    func testTiedTimestampsSortDeterministicallyByID() async throws {
+        let at = Date()
+        let store = RunStore(directory: directory)
+        try await store.save(run(id: "bravo", site: "phone-home", at: at))
+        try await store.save(run(id: "alpha", site: "phone-home", at: at))
+        let first = await store.all()
+        let second = await RunStore(directory: directory).all()
+        XCTAssertEqual(first.map(\.id), ["bravo", "alpha"])
+        XCTAssertEqual(second.map(\.id), ["bravo", "alpha"])
+    }
 }
