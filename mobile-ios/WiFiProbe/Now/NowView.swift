@@ -138,7 +138,10 @@ struct NowView: View {
         DisclosureGroup("What it is doing", isExpanded: $showingSteps) {
             ForEach(model.steps) { step in
                 HStack {
-                    Text("\(step.workload.rawValue) \u{00B7} \(step.endpoint.rawValue)")
+                    // Plain-English stage phrase, not the raw workload and
+                    // endpoint identifiers (`loadlat`, `cloud`). Identifiers
+                    // belong on the detail screen, not here.
+                    Text(RunViewModel.stageName(for: step.workload))
                         .font(.caption)
                     Spacer()
                     if case .failed = step.state {
@@ -170,16 +173,29 @@ struct NowView: View {
             switch workload {
             case "web": return "loading a page"
             case "video": return "playing a video"
+            case "email": return "checking email"
             case "download": return "downloading a file"
             case "loadlat": return "latency under load"
             case "baseline", "path": return "reaching the network"
             default: return nil
             }
         }.sorted()
-        guard !names.isEmpty else { return nil }
-        return names.count == 1
-            ? "\(names[0].capitalized) could not be tested on this network."
+        // A workload with no display string must never suppress the note:
+        // say something did not complete rather than saying nothing.
+        guard !names.isEmpty else {
+            return "Some tests did not complete on this network."
+        }
+        return names.count == 1 && broken.count == 1
+            ? "\(sentenceCase(names[0])) could not be tested on this network."
             : "Some tests did not complete: \(names.joined(separator: ", "))."
+    }
+
+    /// Uppercases only the first character. `String.capitalized` title-cases
+    /// every word ("Loading A Page could not be tested..."), which reads as
+    /// a heading rather than a sentence.
+    private func sentenceCase(_ text: String) -> String {
+        guard let first = text.first else { return text }
+        return first.uppercased() + text.dropFirst()
     }
 
     /// Only shown when the ladder actually failed. Rung 1 works, so this

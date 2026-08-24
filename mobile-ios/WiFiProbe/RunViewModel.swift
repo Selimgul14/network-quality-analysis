@@ -54,6 +54,13 @@ final class RunViewModel {
         .email: "Checking email",
     ]
 
+    /// The plain-English phrase for a workload, shared between the live
+    /// stage text and the Now screen's step disclosure, so a run in
+    /// progress never shows a raw identifier like `loadlat` or `cloud`.
+    static func stageName(for workload: Workload) -> String {
+        stageNames[workload] ?? workload.rawValue
+    }
+
     private let store = AppStores.pending
 
     var canRun: Bool {
@@ -73,6 +80,9 @@ final class RunViewModel {
         outcome = nil
         plannedSteps = nil
         progressFraction = 0
+        // Cleared so a screen gated on `.failed` cannot still show the
+        // previous run's dial score and tint underneath the error text.
+        savedRun = nil
         phase = .running
 
         let config: ProbeConfig
@@ -110,13 +120,15 @@ final class RunViewModel {
 
         phase = .fetchingVerdict
         await fetchVerdict(config: config, site: site, at: result.finishedAt)
-        phase = .done
 
         // Written after the verdict so the stored run carries it. A run
         // reopened later shows what it showed at the time, which is why
-        // the verdict is snapshotted rather than refetched.
+        // the verdict is snapshotted rather than refetched. Assigned
+        // before `phase` flips to `.done` so nothing gated on `.done`
+        // can observe that phase with `savedRun` still nil.
         let stored = StoredRun.from(outcome: result, steps: steps, verdict: verdict)
         savedRun = stored
+        phase = .done
         try? await AppStores.runs.save(stored)
         pendingUploads = await store.pendingCount
     }

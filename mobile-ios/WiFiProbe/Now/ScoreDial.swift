@@ -54,7 +54,13 @@ struct ScoreDial: View {
         }
         .frame(width: 168, height: 168)
         .accessibilityElement()
-        .accessibilityLabel(score.map { "Score \(Int($0.rounded())), \(label ?? "")" }
-                            ?? "Not measured yet")
+        // Gated on isRunning the same way the visuals are: without this a
+        // screen-reader user hears the previous run's score for the whole
+        // duration of a new one, while the ring visually fills with live
+        // progress.
+        .accessibilityLabel(isRunning
+            ? "Testing, \(Int(progress * 100)) percent complete"
+            : score.map { "Score \(Int($0.rounded())), \(label ?? "")" }
+                ?? "Not measured yet")
     }
 }
