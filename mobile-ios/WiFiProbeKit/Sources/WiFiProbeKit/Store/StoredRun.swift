@@ -74,11 +74,15 @@ public struct StoredRun: Codable, Sendable, Identifiable, Equatable {
     public let wifiLinkAttempts: [Attempt]
     public let steps: [Step]
     public let verdict: VerdictSnapshot?
+    /// Headline numbers, lifted out of the run so a chart does not have to
+    /// re-read every record. Nil when that workload did not report.
+    public let downloadMbps: Double?
 
     public init(id: String, site: String, startedAt: Date, finishedAt: Date,
                 recordCount: Int, failedCount: Int, gateway: String?,
                 wifiLinkMethod: String, wifiLinkAttempts: [Attempt],
-                steps: [Step], verdict: VerdictSnapshot?) {
+                steps: [Step], verdict: VerdictSnapshot?,
+                downloadMbps: Double? = nil) {
         self.id = id
         self.site = site
         self.startedAt = startedAt
@@ -90,6 +94,7 @@ public struct StoredRun: Codable, Sendable, Identifiable, Equatable {
         self.wifiLinkAttempts = wifiLinkAttempts
         self.steps = steps
         self.verdict = verdict
+        self.downloadMbps = downloadMbps
     }
 
     /// The site label without the `phone-` prefix, which is the name the
