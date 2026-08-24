@@ -14,12 +14,5 @@ struct RootView: View {
     }
 }
 
-// Replaced in Tasks 9 and 10.
-struct HistoryView: View { var body: some View { Text("History") } }
+// Replaced in Task 10.
 struct TrendsView: View { var body: some View { Text("Trends") } }
-
-// Replaced in Task 9.
-struct RunDetailView: View {
-    let run: StoredRun
-    var body: some View { Text("Detail") }
-}
