@@ -13,6 +13,3 @@ struct RootView: View {
         }
     }
 }
-
-// Replaced in Task 10.
-struct TrendsView: View { var body: some View { Text("Trends") } }

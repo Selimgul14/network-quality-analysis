@@ -83,7 +83,7 @@ public enum Trends {
             }
     }
 
-    static func summarise(site: String, runs: [StoredRun]) -> SiteSummary {
+    public static func summarise(site: String, runs: [StoredRun]) -> SiteSummary {
         var faults: [String: Int] = [:]
         for run in runs {
             for (segment, state) in run.verdict?.segments ?? [:] where state != "ok" {
