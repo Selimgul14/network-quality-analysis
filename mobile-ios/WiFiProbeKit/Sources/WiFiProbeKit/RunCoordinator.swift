@@ -137,6 +137,45 @@ public struct RunCoordinator: Sendable {
     /// all because it must measure idle latency before it creates load.
     private static let applicationOrder: [Workload] = [.web, .video, .download, .loadlat]
 
+    /// How many steps a run will produce, known before it starts.
+    ///
+    /// The screen needs this up front: deriving a denominator from the
+    /// steps seen so far makes it grow as work arrives (each step is
+    /// appended once, in `.running`, before it finishes), so a fraction
+    /// built from `steps.count` climbs to 1 as soon as the first eleven
+    /// steps land, then falls back once a twelfth and thirteenth arrive.
+    /// Working out the true total ahead of time, from the same
+    /// `Endpoints` calls `run(site:progress:)` itself uses, avoids that.
+    ///
+    /// The gateway leg and the WiFi-link path record both depend on
+    /// whether a gateway address was found: `run(site:progress:)` looks
+    /// it up right at the start, before the parallel baseline group,
+    /// which is why the caller can know `gatewayFound` before the run's
+    /// application steps begin.
+    public static func plannedStepCount(config: ProbeConfig, gatewayFound: Bool) -> Int {
+        // Off-site baseline targets never include the gateway: run(site:)
+        // always calls baselineTargets(gateway: nil) and measures the
+        // gateway separately, so this count is the same whether or not a
+        // gateway was found.
+        let offSiteBaseline = Endpoints.baselineTargets(config: config, gateway: nil).count
+        let gatewayStep = gatewayFound ? 1 : 0
+        let pathStep = gatewayFound ? 1 : 0
+        let applicationSteps = applicationOrder.reduce(0) {
+            $0 + Endpoints.targets(for: $1, config: config).count
+        }
+        return offSiteBaseline + gatewayStep + pathStep + applicationSteps
+    }
+
+    /// The ring's fraction, from a fixed planned total and how many steps
+    /// have reached a terminal state. Pure so it is testable without a
+    /// simulator: fed a planned total that does not move, and a finished
+    /// count that only ever increases as a run proceeds, this cannot
+    /// decrease.
+    public static func progressFraction(finished: Int, planned: Int) -> Double {
+        guard planned > 0 else { return 0 }
+        return min(1, Double(finished) / Double(planned))
+    }
+
     public func run(site: String,
                     progress: @Sendable @escaping (RunStep) -> Void) async -> RunOutcome {
         let runID = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
