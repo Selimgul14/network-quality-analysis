@@ -237,4 +237,69 @@ final class RunCoordinatorTests: XCTestCase {
         XCTAssertEqual(running, outcome.recordCount)
         XCTAssertEqual(settled, outcome.recordCount)
     }
+
+    // MARK: planned step count and progress fraction
+    //
+    // `RunViewModel.progressFraction` used to divide by `steps.count`,
+    // a denominator that grows as work arrives and so falls back once
+    // more steps land than the eleven it assumed. These tests pin down
+    // the fixed denominator that replaced it.
+
+    /// Computed against the same `Endpoints` calls `run(site:progress:)`
+    /// itself uses, not a frozen number, so this tracks the config
+    /// rather than freezing today's target list.
+    func testPlannedStepCountWithGatewayMatchesEndpoints() {
+        let offSite = Endpoints.baselineTargets(config: config, gateway: nil).count
+        let applicationSteps = [Workload.web, .video, .download, .loadlat].reduce(0) {
+            $0 + Endpoints.targets(for: $1, config: config).count
+        }
+        // The gateway leg and the WiFi-link path record, one step each.
+        let expected = offSite + 1 + 1 + applicationSteps
+        XCTAssertEqual(RunCoordinator.plannedStepCount(config: config, gatewayFound: true),
+                       expected)
+    }
+
+    /// Cross-checked against an actual run: every record the stub
+    /// coordinator produces should match the planned total when the
+    /// gateway answers.
+    func testPlannedStepCountWithGatewayMatchesARealRun() async {
+        let outcome = await coordinator().run(site: "phone-test") { _ in }
+        XCTAssertEqual(outcome.recordCount,
+                       RunCoordinator.plannedStepCount(config: config, gatewayFound: true))
+    }
+
+    /// No gateway found drops both the gateway baseline step and the
+    /// path record: exactly two fewer, not one. The off-site baseline
+    /// count does not change, since `run(site:progress:)` always looks
+    /// those up with `gateway: nil` regardless of whether the gateway
+    /// leg ran.
+    func testPlannedStepCountWithoutGatewayIsExactlyTwoLess() {
+        let with = RunCoordinator.plannedStepCount(config: config, gatewayFound: true)
+        let without = RunCoordinator.plannedStepCount(config: config, gatewayFound: false)
+        XCTAssertEqual(with - without, 2)
+    }
+
+    /// Same cross-check as above, gateway absent.
+    func testPlannedStepCountWithoutGatewayMatchesARealRun() async {
+        let outcome = await coordinator(gateway: nil).run(site: "phone-test") { _ in }
+        XCTAssertEqual(outcome.recordCount,
+                       RunCoordinator.plannedStepCount(config: config, gatewayFound: false))
+    }
+
+    /// Fed the finished-step counts in the order a real run reports
+    /// them (rising by exactly one at a time, planned total fixed),
+    /// the fraction must never fall back and never exceed 1. This is
+    /// the regression test for the bug: a denominator that moved with
+    /// `steps.count` let the fraction reach 1 early, then retreat.
+    func testProgressFractionIsMonotonicAcrossARun() {
+        let planned = RunCoordinator.plannedStepCount(config: config, gatewayFound: true)
+        var previous = 0.0
+        for finished in 0...planned {
+            let fraction = RunCoordinator.progressFraction(finished: finished, planned: planned)
+            XCTAssertGreaterThanOrEqual(fraction, previous)
+            XCTAssertLessThanOrEqual(fraction, 1)
+            previous = fraction
+        }
+        XCTAssertEqual(previous, 1)
+    }
 }
