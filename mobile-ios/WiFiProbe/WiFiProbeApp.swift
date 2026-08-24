@@ -4,7 +4,7 @@ import SwiftUI
 struct WiFiProbeApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            RootView()
         }
     }
 }

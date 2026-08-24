@@ -14,6 +14,10 @@
 		AA000000000000000000000A /* WebHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000009 /* WebHost.swift */; };
 		AA000000000000000000001E /* WiFiProbeKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA000000000000000000001D /* WiFiProbeKit */; };
 		AA000000000000000000001F /* AppStores.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000021 /* AppStores.swift */; };
+		AA0000000000000000000023 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000022 /* RootView.swift */; };
+		AA0000000000000000000025 /* ScoreDial.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000024 /* ScoreDial.swift */; };
+		AA0000000000000000000027 /* SitePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000026 /* SitePicker.swift */; };
+		AA0000000000000000000029 /* NowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000028 /* NowView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +30,10 @@
 		AA000000000000000000000C /* App.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = App.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000010 /* WiFiProbe.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WiFiProbe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000021 /* AppStores.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStores.swift; sourceTree = "<group>"; };
+		AA0000000000000000000022 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		AA0000000000000000000024 /* ScoreDial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreDial.swift; sourceTree = "<group>"; };
+		AA0000000000000000000026 /* SitePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SitePicker.swift; sourceTree = "<group>"; };
+		AA0000000000000000000028 /* NowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NowView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,15 +60,27 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000001 /* WiFiProbeApp.swift */,
+				AA0000000000000000000022 /* RootView.swift */,
 				AA0000000000000000000003 /* ContentView.swift */,
 				AA0000000000000000000005 /* RunViewModel.swift */,
 				AA0000000000000000000007 /* AppConfig.swift */,
 				AA0000000000000000000009 /* WebHost.swift */,
 				AA0000000000000000000021 /* AppStores.swift */,
+				AA000000000000000000002A /* Now */,
 				AA000000000000000000000B /* Info.plist */,
 				AA000000000000000000000C /* App.xcconfig */,
 			);
 			path = WiFiProbe;
+			sourceTree = "<group>";
+		};
+		AA000000000000000000002A /* Now */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000024 /* ScoreDial.swift */,
+				AA0000000000000000000026 /* SitePicker.swift */,
+				AA0000000000000000000028 /* NowView.swift */,
+			);
+			path = Now;
 			sourceTree = "<group>";
 		};
 		AA000000000000000000000F /* Products */ = {
@@ -151,6 +171,10 @@
 				AA0000000000000000000008 /* AppConfig.swift in Sources */,
 				AA000000000000000000000A /* WebHost.swift in Sources */,
 				AA000000000000000000001F /* AppStores.swift in Sources */,
+				AA0000000000000000000023 /* RootView.swift in Sources */,
+				AA0000000000000000000025 /* ScoreDial.swift in Sources */,
+				AA0000000000000000000027 /* SitePicker.swift in Sources */,
+				AA0000000000000000000029 /* NowView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
