@@ -59,9 +59,16 @@ SEGMENT_ENDPOINT = {"wifi_link": "local", "internet_path": "cloud", "third_party
 #                       use (calls, gaming, typing) feels. Bufferbloat in
 #                       the home gateway dominates interactive latency
 #                       (Sundaresan et al., SIGCOMM 2011).
-#   web 0.25            waiting time drives web QoE (ITU-T G.1030).
-#   download 0.10       bulk transfer: elastic, tolerant (ITU-T G.1010
-#   email 0.05          "background" class; email tolerates minutes).
+#   web 0.25            waiting time drives web QoE (ITU-T G.1030 (02/14),
+#                       Appendix II, opinion model for a web search task).
+#   download 0.10       bulk transfer and mail retrieval are the most
+#   email 0.05          delay-tolerant of the four (ITU-T G.1010 (11/2001),
+#                       5.3.2 bulk data and 5.3.8 e-mail server access).
+# CITATIONS PENDING VERIFICATION: the ITU documents have not been read
+# against these claims yet; see meetings/2026-08-citation-audit.md. An
+# earlier version of this comment called download and email "background
+# class", which G.1010 does not support: 5.4 Background covers
+# server-to-server mail, not the IMAP retrieval measured here.
 HEALTH_WEIGHTS = {
     "video": 0.35,
     "responsiveness": 0.25,
@@ -70,8 +77,11 @@ HEALTH_WEIGHTS = {
     "email": 0.05,
 }
 # Responsiveness inputs: added latency under load (the common bufferbloat
-# grading bands put A under ~30 ms) and baseline loss (interactive audio
-# degrades past ~1% and badly past ~5%, cf. ITU-T G.1010 / G.107).
+# grading bands put A under ~30 ms) and baseline loss. The 1% / 5% loss
+# bounds are the weakest citation in this file: they are conventional
+# figures for interactive audio, attributed to ITU-T G.1010 / G.107, but
+# neither document has been checked for them. Verify or soften before the
+# dissertation cites them.
 BLOAT_GOOD_MS, BLOAT_POOR_MS = 30.0, 100.0
 LOSS_GOOD_PCT, LOSS_POOR_PCT = 1.0, 5.0
 

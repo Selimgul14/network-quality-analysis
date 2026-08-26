@@ -4,6 +4,7 @@
 #
 #   sudo ./inject.sh list                 show the scenarios
 #   sudo ./inject.sh fast                 60 s heavy cadence, for the test window
+#   sudo ./inject.sh matrix               run all 8 unattended (~2h15)
 #   sudo ./inject.sh run 05               apply scenario 05 and label the data
 #   sudo ./inject.sh clear                remove all impairment, restore the label
 #   sudo ./inject.sh status               what is currently applied
@@ -174,7 +175,43 @@ case "${1:-}" in
     log_event "$scenario" "$site" start
     echo "scenario $scenario applied: ${DESC[$scenario]}"
     echo "records are landing under site '$site'"
+    echo
+    # Prove the impairment is real before waiting 15 minutes for medians.
+    # Scenario 05 and 07 are the interesting ones: the gateway must stay
+    # healthy while the anchor degrades or dies.
+    gw=$(gateway)
+    echo "--- verification ---"
+    echo -n "gateway $gw : "; ping -c 3 -W 3 -q "$gw" 2>/dev/null \
+      | awk -F'/' '/rtt|round-trip/ {printf "%s ms avg", $5} /packet loss/ {printf " "}' \
+      || echo -n "no reply"
+    ping -c 3 -W 3 -q "$gw" 2>/dev/null | awk '/packet loss/ {print ", " $6 " loss"}'
+    echo -n "anchor 1.1.1.1 : "; ping -c 3 -W 3 -q 1.1.1.1 2>/dev/null \
+      | awk -F'/' '/rtt|round-trip/ {printf "%s ms avg", $5}'
+    ping -c 3 -W 3 -q 1.1.1.1 2>/dev/null | awk '/packet loss/ {print ", " $6 " loss"}' \
+      || echo "unreachable"
+    echo "-------------------"
     echo "leave it running ~15 min, then: sudo $0 clear" ;;
+
+  matrix)
+    mins=${2:-15}
+    echo "running all 8 scenarios at ${mins} min each: about $(( (mins + 2) * 8 / 60 ))h$(( (mins + 2) * 8 % 60 ))m"
+    echo "safe to walk away; every scenario clears itself and the watchdog backs it up"
+    # Clear up if this is interrupted, so a fault is never left applied.
+    trap 'echo; echo "interrupted, clearing"; "$0" clear; "$0" normal; exit 130' INT TERM
+    "$0" fast
+    for s in 01 02 03 04 05 06 07 08; do
+      echo; echo "=============== scenario $s ==============="
+      if ! "$0" run "$s"; then
+        echo "scenario $s could not be applied, skipping"
+        "$0" clear; continue
+      fi
+      sleep $((mins * 60))
+      "$0" clear
+      sleep 120                      # let the probe settle before the next one
+    done
+    "$0" normal
+    echo; echo "matrix complete. Now score it:"
+    echo "  python3 analyse.py --password <dashboard-pw> --markdown" ;;
 
   clear)
     clear_tc
