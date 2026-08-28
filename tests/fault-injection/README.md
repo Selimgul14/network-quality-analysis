@@ -28,7 +28,19 @@ demand.
 
 ## Before you start
 
-On the Pi:
+First make sure the Pi has this code. `/opt/probe/probe/update.sh`
+pulls and restarts; if that file does not exist yet, the checkout
+predates it, so fetch by hand once:
+
+```
+cd /opt/probe
+sudo git fetch https://x-access-token:$(gh auth token)@github.com/Selimgul14/network-quality-analysis.git main
+sudo git reset --hard FETCH_HEAD
+sudo git update-ref refs/remotes/origin/main FETCH_HEAD
+sudo systemctl restart probe
+```
+
+Then, on the Pi:
 
 ```
 sudo modprobe sch_netem && echo netem ok      # kernel module present
