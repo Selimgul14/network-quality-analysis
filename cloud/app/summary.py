@@ -150,8 +150,39 @@ def _status(workload: str, value: float | None, endpoint: str | None = None,
     return "good" if value >= good else ("degraded" if value >= poor else "poor")
 
 
+def _gateway_rtt(rows: list[dict]) -> float | None:
+    """Median RTT of the baseline probe against the default gateway.
+
+    This is a direct measurement of the wireless link: the packet is
+    addressed to the router itself and goes no further.
+    """
+    vals = [
+        r["metrics"]["rtt_ms"]
+        for r in rows
+        if r["workload"] == "baseline" and r["endpoint"] == "local" and r["ok"]
+        and (r["metrics"] or {}).get("rtt_ms")
+    ]
+    return round(median(vals), 2) if vals else None
+
+
 def _first_hop_rtt(rows: list[dict]) -> float | None:
-    """Median hop-1 RTT from the path workload: WiFi-link latency."""
+    """WiFi-link latency: the direct gateway probe where available, else
+    hop 1 of the traceroute.
+
+    The traceroute first hop looks equivalent and is not. A TTL-limited
+    probe is *addressed to the destination*, so anything impairing the
+    path to that destination also delays the probe, even though the reply
+    comes from the router. Fault-injection scenario 05 demonstrated this:
+    with 150 ms injected against every destination except the gateway,
+    the direct gateway probe correctly read 2.31 ms while the traceroute
+    first hop read 153.25 ms, and the link was wrongly implicated. The
+    direct measurement is preferred whenever the baseline supplies one;
+    hop 1 remains the fallback for networks where the gateway does not
+    answer at all.
+    """
+    direct = _gateway_rtt(rows)
+    if direct is not None:
+        return direct
     vals = [
         r["metrics"]["first_hop_rtt_ms"]
         for r in rows
@@ -193,8 +224,17 @@ def _quality(value: float | None, good: float, poor: float, lower: bool = True) 
 
 
 def _responsiveness(rows: list[dict]) -> float | None:
-    """Interactive feel: median added latency under load (loadlat) and
-    median baseline loss, each mapped to quality and averaged."""
+    """Interactive feel: added latency under load, and baseline loss.
+
+    Latency is summarised by its median, which is the right statistic for
+    a continuous quantity with a skewed tail. Loss is not: each run reports
+    the share of a small fixed number of packets, so the value is quantised
+    and mostly zero. Fault-injection scenario 03 made the consequence
+    concrete. With 5% loss injected, 279 of 404 runs still reported exactly
+    zero, so the median was 0.0 and the score saw a clean network, while
+    the mean was 3.76% and correct. Loss is therefore aggregated by the
+    mean, which is also what the Grafana panel does, so the two agree.
+    """
     bloat = [
         r["metrics"]["bloat_ms"] for r in rows
         if r["workload"] == "loadlat" and r["ok"] and "bloat_ms" in (r["metrics"] or {})
@@ -206,7 +246,7 @@ def _responsiveness(rows: list[dict]) -> float | None:
     parts = [
         q for q in (
             _quality(median(bloat), BLOAT_GOOD_MS, BLOAT_POOR_MS) if bloat else None,
-            _quality(median(loss), LOSS_GOOD_PCT, LOSS_POOR_PCT) if loss else None,
+            _quality(sum(loss) / len(loss), LOSS_GOOD_PCT, LOSS_POOR_PCT) if loss else None,
         ) if q is not None
     ]
     return round(sum(parts) / len(parts), 1) if parts else None
@@ -271,6 +311,31 @@ def _availability(rows: list[dict]) -> dict[str, Any]:
         "attempted": len(tried),
         "failed": len(failed),
     }
+
+
+# Order along the path from the user outwards. Used to break ties: a
+# fault in an earlier segment also degrades everything after it, so when
+# the evidence is balanced the earlier segment is the better explanation.
+SEGMENT_ORDER = ("wifi_link", "internet_path", "third_party")
+
+
+def _most_likely(suspects: list[str]) -> str | None:
+    """The segment to name, given a vote per degraded workload.
+
+    Most votes wins. Ties go to the segment nearest the user. The tie
+    matters more than it looks: fault injection scenario 04 produced one
+    vote each for all three segments, and the previous implementation,
+    `max(set(suspects), key=suspects.count)`, picked whichever the set
+    happened to iterate first. Since Python randomises string hashing per
+    process, the same measurements could be blamed on a different segment
+    after a restart. A diagnosis that changes when nothing changed is
+    worse than a wrong one, because it cannot be argued with.
+    """
+    if not suspects:
+        return None
+    top = max(suspects.count(s) for s in set(suspects))
+    tied = [s for s in SEGMENT_ORDER if suspects.count(s) == top]
+    return tied[0] if tied else None
 
 
 def _attribute(per_endpoint: dict[str, str]) -> str | None:
@@ -362,7 +427,7 @@ def compute_summary(rows: list[dict], hours: int) -> dict[str, Any]:
         if first_hop > WIFI_LINK_GOOD_MS:
             suspects.append("wifi_link")
 
-    likely = max(set(suspects), key=suspects.count) if suspects else None
+    likely = _most_likely(suspects)
 
     statuses = [w["status"] for w in workloads.values() if w["status"] != "no_data"]
     down = [s for s, v in segments.items() if v == "down"]

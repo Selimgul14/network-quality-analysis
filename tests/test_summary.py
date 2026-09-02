@@ -182,6 +182,62 @@ def test_availability_scales_the_health_score():
     assert patchy["label"] in ("fair", "poor", "bad")
 
 
+# --- defects found by fault injection ----------------------------------------
+
+
+def test_tie_break_is_deterministic_and_upstream_first():
+    """Scenario 04 produced one vote for each segment. The old rule,
+    max() over a set, returned whichever the set iterated first, so the
+    same measurements could be blamed differently after a restart."""
+    from cloud.app.summary import _most_likely
+    for _ in range(20):
+        assert _most_likely(["third_party", "internet_path", "wifi_link"]) == "wifi_link"
+        assert _most_likely(["third_party", "internet_path"]) == "internet_path"
+    # a clear majority still wins regardless of order
+    assert _most_likely(["third_party", "third_party", "wifi_link"]) == "third_party"
+    assert _most_likely([]) is None
+
+
+def test_gateway_probe_beats_traceroute_hop1():
+    """Scenario 05: 150 ms injected against every destination except the
+    gateway. The direct gateway probe read 2.31 ms; the traceroute first
+    hop read 153.25 ms, because a TTL-limited probe is addressed to the
+    destination and shares its fate. The direct measurement must win."""
+    rows = [
+        {"workload": "baseline", "endpoint": "local", "ok": True,
+         "metrics": {"rtt_ms": 2.31}} for _ in range(10)
+    ]
+    rows += [_row("path", "real", first_hop_rtt_ms=153.25)]
+    rows += [_row("web", "cloud", load_ms=827.0), _row("web", "real", load_ms=4693.45)]
+    s = compute_summary(rows, hours=1)
+    assert s["wifi_link_rtt_ms"] == 2.31
+    assert s["segments"]["wifi_link"] == "ok"      # the link is exonerated
+
+
+def test_traceroute_hop1_is_the_fallback():
+    """Where the gateway does not answer at all, hop 1 is still used."""
+    rows = [_row("path", "real", first_hop_rtt_ms=4.9),
+            _row("web", "cloud", load_ms=300)]
+    s = compute_summary(rows, hours=1)
+    assert s["wifi_link_rtt_ms"] == 4.9
+    assert s["wifi_link_from_path"] is True
+
+
+def test_loss_is_averaged_not_medianed():
+    """Scenario 03: 5% loss injected, but 69% of ten-packet runs lose
+    nothing, so the median is 0 and hides it. The mean is 3.76% and does
+    not. Aggregating loss by the median made the score blind."""
+    # 279 clean runs and 125 lossy ones, the shape scenario 03 produced
+    rows = [{"workload": "baseline", "endpoint": "real", "ok": True,
+             "metrics": {"loss_pct": 0.0}} for _ in range(279)]
+    rows += [{"workload": "baseline", "endpoint": "real", "ok": True,
+              "metrics": {"loss_pct": 12.0}} for _ in range(125)]
+    s = compute_summary(rows, hours=1)
+    resp = s["health"]["components"]["responsiveness"]
+    # the mean here is ~3.7%, comfortably past the 1% good threshold
+    assert resp is not None and resp < 60, f"loss went unnoticed: {resp}"
+
+
 def test_wifi_link_down_when_even_the_local_leg_fails():
     rows = [_fail("web", "local"), _fail("web", "cloud"), _fail("web", "real")]
     s = compute_summary(rows, hours=1)
