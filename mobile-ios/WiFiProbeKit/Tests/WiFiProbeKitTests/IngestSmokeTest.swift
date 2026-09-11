@@ -18,7 +18,7 @@ final class IngestSmokeTest: XCTestCase {
         }
 
         let config = ProbeConfig(
-            probeID: "iphone13-selim", site: "phone-smoke-test",
+            probeID: "iphone-dev-01", site: "phone-smoke-test",
             ingestURL: URL(string: "https://comp702-api.azurewebsites.net/ingest")!,
             ingestToken: token,
             apiBase: URL(string: "https://comp702-api.azurewebsites.net")!,

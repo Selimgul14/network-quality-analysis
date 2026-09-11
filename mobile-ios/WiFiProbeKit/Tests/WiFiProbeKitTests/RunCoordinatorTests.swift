@@ -19,7 +19,7 @@ final class RunCoordinatorTests: XCTestCase {
         session = URLSession(configuration: configuration)
         store = PendingStore()
         config = ProbeConfig(
-            probeID: "iphone13-selim", site: "phone-test",
+            probeID: "iphone-dev-01", site: "phone-test",
             ingestURL: URL(string: "https://comp702-api.azurewebsites.net/ingest")!,
             ingestToken: "t",
             apiBase: URL(string: "https://comp702-api.azurewebsites.net")!,
@@ -97,7 +97,7 @@ final class RunCoordinatorTests: XCTestCase {
         _ = await coordinator().run(site: "phone-halls-room") { _ in }
         for record in await records() {
             XCTAssertEqual(record.site, "phone-halls-room")
-            XCTAssertEqual(record.probeID, "iphone13-selim")
+            XCTAssertEqual(record.probeID, "iphone-dev-01")
             XCTAssertTrue(record.site!.hasPrefix("phone-"))
             XCTAssertFalse(record.probeID.hasPrefix("pi-"))
         }

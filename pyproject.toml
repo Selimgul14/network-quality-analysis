@@ -1,7 +1,8 @@
 [project]
 name = "wifi-perf-tool"
 version = "0.1.0"
-description = "Remote WiFi Performance Tool (COMP702 MSc project)"
+description = "Remote WiFi Performance Tool: application-level WiFi measurement with three-way fault attribution"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
     # probe

@@ -15,7 +15,7 @@ final class ContractTests: XCTestCase {
     ) -> Record {
         Record(
             ts: Date(timeIntervalSince1970: 1_755_000_000),
-            probeID: "iphone13-selim",
+            probeID: "iphone-dev-01",
             site: "phone-halls-room",
             runID: "0f3a1c9d4b2e",
             workload: workload,
@@ -37,7 +37,7 @@ final class ContractTests: XCTestCase {
 
     func testSnakeCaseKeyMapping() throws {
         let json = try sample().jsonObject()
-        XCTAssertEqual(json["probe_id"] as? String, "iphone13-selim")
+        XCTAssertEqual(json["probe_id"] as? String, "iphone-dev-01")
         XCTAssertEqual(json["run_id"] as? String, "0f3a1c9d4b2e")
         XCTAssertEqual(json["net_hash"] as? String, "a1b2c3d4e5f6")
     }

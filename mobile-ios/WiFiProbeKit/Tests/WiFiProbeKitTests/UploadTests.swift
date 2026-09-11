@@ -48,7 +48,7 @@ final class UploadTests: XCTestCase {
         configuration.protocolClasses = [StubProtocol.self]
         session = URLSession(configuration: configuration)
         config = ProbeConfig(
-            probeID: "iphone13-selim", site: "phone-test",
+            probeID: "iphone-dev-01", site: "phone-test",
             ingestURL: URL(string: "https://comp702-api.azurewebsites.net/ingest")!,
             ingestToken: "test-token",
             apiBase: URL(string: "https://comp702-api.azurewebsites.net")!,
@@ -60,7 +60,7 @@ final class UploadTests: XCTestCase {
     }
 
     private func record(ok: Bool = true) -> Record {
-        Record(probeID: "iphone13-selim", site: "phone-test", runID: "r1",
+        Record(probeID: "iphone-dev-01", site: "phone-test", runID: "r1",
                workload: .download, endpoint: .cloud,
                target: "https://comp702-ref.azurewebsites.net/files/testfile.bin",
                ok: ok, error: ok ? nil : "boom",

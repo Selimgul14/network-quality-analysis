@@ -4,7 +4,7 @@ Numbered so the dissertation can reference them. The namespace is **M**
 for mobile, deliberately separate from the dissertation's existing R1-R7
 and S1-S3 so nothing collides.
 
-Read `CONSTRAINTS.md` first. Where a constraint and a requirement
+Where a constraint and a requirement
 disagree, the constraint wins. The design that satisfies these is in
 `DESIGN.md`.
 
@@ -63,7 +63,7 @@ posted, explicitly with no tab bar, no settings screen and no history
 browser, on the grounds that the web dashboard already covers history and
 is already responsive. What was actually built is a three-tab app (Now,
 History, Trends) with on-device run storage and a Settings screen: see
-M11 and Task 8 of `specs/2026-08-24-app-redesign-plan.md` for why that
+M11 for why that
 line moved. Now still carries everything M7 originally asked for; it is
 one tab of three rather than the whole app.
 
@@ -190,7 +190,7 @@ it is part of the contribution.
 | M6 | Show the backend's verdict | Client built. Blocked on `DASH_PASS`, which exists only in Azure App Service settings, so `/summary` currently returns 401 until it is filled in. |
 | M7 | One primary screen | Superseded; see M7's own entry above and M11 below. The Now tab still carries everything it originally asked for. |
 | M8 | Failures recorded as data | Built and tested. |
-| M9 | No records lost to a bad network | Built and tested: an unreachable backend leaves every record pending, and the queue is now watched live on the Now screen rather than sampled once (see the controller ruling in `specs/2026-08-24-app-redesign-plan.md`, Task 11). |
+| M9 | No records lost to a bad network | Built and tested: an unreachable backend leaves every record pending, and the queue is now watched live on the Now screen rather than sampled once. |
 | M10 | Measure the WiFi link | Built and corrected. The 21 August "unproven, development network filters ICMP" reading was itself wrong: the halls router answers ICMP echo in about 3.2 ms and always did. A `SOCK_DGRAM` ICMP socket on Darwin delivers the IPv4 header ahead of the ICMP one, and the app was parsing the reply at the wrong offset, manufacturing 100% loss on every host. Fixed in Task 1 of the app redesign plan. The WiFi link is now measured by a three-rung ladder (ICMP echo, then a TTL-limited probe timing the time-exceeded reply, then TCP connect-or-refusal on an on-link address), and the app reports which rung answered, including the real case where none does (confirmed 24 August on 10.224.7.x). |
 | M11 | History and Trends, kept on the device | Built and tested. `HistoryView`, `RunDetailView` and `TrendsView` over an on-device `RunStore`. |
 

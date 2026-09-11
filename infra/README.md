@@ -39,9 +39,9 @@ Timescale hypertable (the extension is preloaded by the template).
 In the probe's `.env`:
 
 ```
-PROBE_INGEST_URL=https://comp702-api.azurewebsites.net/ingest
+PROBE_INGEST_URL=https://<api-app>.azurewebsites.net/ingest
 PROBE_INGEST_TOKEN=<the same token>
-PROBE_CLOUD_BASE=https://comp702-ref.azurewebsites.net
+PROBE_CLOUD_BASE=https://<ref-app>.azurewebsites.net
 ```
 
 ## 3b. Redeploy after a code change
@@ -78,8 +78,8 @@ Same three commands for `comp702-grafana` / `wifi-grafana` and
 `comp702-ref` / `wifi-ref`. Give App Service a minute, then check:
 
 ```
-curl -s https://comp702-api.azurewebsites.net/health
-curl -s -u wifi:<dash-pw> https://comp702-api.azurewebsites.net/summary | head -c 300
+curl -s https://<api-app>.azurewebsites.net/health
+curl -s -u wifi:<dash-pw> https://<api-app>.azurewebsites.net/summary | head -c 300
 ```
 
 **Architecture gotcha:** a build on Apple Silicon produces an arm64
@@ -127,22 +127,18 @@ az group delete -n comp702-rg
 - Dual-region reference (stretch goal): redeploy `wifi-ref` in a second
   resource group in another region; nothing else changes.
 
-## Deployed state (7 July 2026)
+## Notes from the reference deployment (July to September 2026)
 
-Live in `comp702-rg`, all resources in `norwayeast`: the student
-subscription's region policy only allows norwayeast, francecentral,
-germanywestcentral, switzerlandnorth and italynorth, and App Service
-capacity (France) / Postgres offer restrictions (Germany) ruled others
-out. Docker Hub namespace `selimgul14`. Hostnames: `comp702-api.azurewebsites.net` (summary page at `/`,
-HTTP Basic, user `wifi`), `comp702-ref.azurewebsites.net`,
-`comp702-grafana.azurewebsites.net` (Grafana login, user `wifi`),
-`comp702-pg.postgres.database.azure.com`.
+The author's deployment ran in `norwayeast`, because the student
+subscription's region policy did not permit UK regions and App Service
+capacity or Postgres offer restrictions ruled out the other permitted
+ones. The practical effect is that the "cloud" reference endpoint sat
+about 35 ms from a UK probe instead of 10 to 15 ms; the attribution
+logic tolerates this because it compares against thresholds, not
+absolute expectations, but it is a method detail to state.
 
-Notes: the "cloud" endpoint is Oslo, not the UK (dissertation method
-detail). `shared_preload_libraries` needed a manual Postgres restart
-before the Timescale migration could run: if the api container loops on
-startup after a fresh deploy, restart pg then the api webapp. Azure
-Grafana is stateless (panels live in git; export JSON back into
-dashboard/grafana/dashboards/ after UI edits). The `allow-client`
-firewall rule (home IP) is only for direct psql/local Grafana; the
-hosted dashboards work from anywhere.
+`shared_preload_libraries` needed a manual Postgres restart before the
+Timescale migration could run: if the api container loops on startup
+after a fresh deploy, restart Postgres and then the api web app. Azure
+Grafana is stateless; panels live in git, so export JSON back into
+`dashboard/grafana/dashboards/` after editing in the UI.

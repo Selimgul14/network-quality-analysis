@@ -1,7 +1,7 @@
 # Design
 
 How the requirements in `REQUIREMENTS.md` are met. Written before any
-code, and bound by `CONSTRAINTS.md`.
+code.
 
 ## 1. The claim this design exists to support
 

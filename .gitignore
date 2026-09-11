@@ -1,15 +1,33 @@
+# Secrets and local configuration: never commit these.
 .env
+.env.*
+!.env.example
+mobile-ios/Secrets.xcconfig
+*.local.xcconfig
+
+# Local state produced at runtime
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+faultinj-log.tsv
+tests/analysis/deployment-cache.json
+data/
+
+# Python
 __pycache__/
 *.pyc
+*.egg-info/
 .venv/
 .pytest_cache/
 .ruff_cache/
-# large reference assets (see reference/README.md)
+
+# Large reference assets, generated at image build time (see reference/README.md)
 reference/content/media/
 reference/content/files/
 
-# subagent-driven-development scratch
+# Editors, OS, agents
+.DS_Store
+.idea/
+.vscode/
+.claude/
 .superpowers/

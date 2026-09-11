@@ -4,7 +4,7 @@ import XCTest
 final class EndpointsTests: XCTestCase {
 
     private let config = ProbeConfig(
-        probeID: "iphone13-selim",
+        probeID: "iphone-dev-01",
         site: "phone-test",
         ingestURL: URL(string: "https://comp702-api.azurewebsites.net/ingest")!,
         ingestToken: "t",
